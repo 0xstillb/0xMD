@@ -9,7 +9,7 @@ const THEMES = [
 
 const CODE_THEMES = ['github', 'github-dark', 'night-owl', 'dracula', 'nord'];
 
-export function openSettings({ modal, body, settings, onSave, onClose }) {
+export function openSettings({ modal, body, settings, onSave, onClose, onAssocChanged }) {
   const draft = JSON.parse(JSON.stringify(settings));
 
   body.innerHTML = '';
@@ -144,6 +144,40 @@ export function openSettings({ modal, body, settings, onSave, onClose }) {
   row(features, 'Show sidebar', checkbox(draft.showSidebar, (checked) => { draft.showSidebar = checked; })).addEventListener('change', (event) => {
     draft.showSidebar = event.target.checked;
   });
+
+  // ---- file associations --------------------------------------------------
+  const assoc = section('File associations');
+  const assocNote = document.createElement('p');
+  assocNote.className = 'settings-hint';
+  assocNote.id = 'file-assoc-note';
+  assocNote.textContent = 'Checking…';
+  assoc.append(assocNote);
+
+  const assocActions = document.createElement('div');
+  assocActions.className = 'settings-actions';
+
+  const assocButton = document.createElement('button');
+  assocButton.type = 'button';
+  assocButton.className = 'settings-link-button';
+  assocButton.id = 'file-assoc-button';
+  assocButton.textContent = 'Register 0xMD for .md files';
+  assocButton.addEventListener('click', async () => {
+    assocButton.disabled = true;
+    assocButton.textContent = 'Working…';
+    try {
+      if (assocButton.dataset.mode === 'unregister') {
+        await window.api.unregisterFileAssoc();
+      } else {
+        await window.api.registerFileAssoc();
+      }
+      await onAssocChanged?.();
+    } finally {
+      assocButton.disabled = false;
+    }
+  });
+
+  assocActions.append(assocButton);
+  assoc.append(assocActions);
 
   // ---- MCP --------------------------------------------------------------
   const mcp = section('MCP');

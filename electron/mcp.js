@@ -384,6 +384,25 @@ function buildServer({ callRenderer, getContext }) {
   );
 
   server.registerTool(
+    'register_file_associations',
+    {
+      title: 'Register the file associations',
+      description:
+        'Registers 0xMD as a handler for Markdown files, so it appears in the '
+        + '"Open with" list of the file explorer.',
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const result = await callRenderer('register_file_associations', {});
+        return ok(result);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
     'get_app_info',
     {
       title: 'Get application info',

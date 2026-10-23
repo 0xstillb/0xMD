@@ -4,6 +4,8 @@ node_modules/
 # build output
 dist/
 release/
+release-build*/
+.verify/
 
 # editor / OS noise
 .DS_Store

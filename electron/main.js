@@ -363,6 +363,21 @@ function debounce(fn, wait) {
   };
 }
 
+/** Register the file association and tell the user about it. */
+async function registerFileAssocFromMenu() {
+  const { registerFileAssociations } = await import('./file-assoc.js');
+  const result = await registerFileAssociations();
+  await dialog.showMessageBox(mainWindow, {
+    type: result.ok ? 'info' : 'warning',
+    message: result.ok ? '0xMD is now registered for Markdown files.' : 'Could not register the file association.',
+    detail: result.ok
+      ? 'Right-click a .md file in Explorer and pick 0xMD from "Open with".'
+      : result.error || 'Unknown error',
+    buttons: ['OK'],
+  });
+  return result;
+}
+
 /* ------------------------------------------------------------------ *
  * Native menu.
  * ------------------------------------------------------------------ */
@@ -379,6 +394,7 @@ function buildMenu() {
         { label: 'New File', accelerator: 'CmdOrCtrl+N', click: () => send('file.new') },
         { label: 'Open File…', accelerator: 'CmdOrCtrl+O', click: () => send('file.open') },
         { label: 'Open Folder…', accelerator: 'CmdOrCtrl+Shift+O', click: () => send('file.openFolder') },
+        { label: 'Register as Markdown Handler', click: () => registerFileAssocFromMenu() },
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => send('file.save') },
         { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('file.saveAs') },
@@ -778,9 +794,31 @@ function registerIpc() {
   ipcMain.handle('update:check', () => checkForUpdates());
   ipcMain.handle('update:status', () => updateStatus);
 
+  // ---- file associations -------------------------------------------------
+  ipcMain.handle('fileAssoc:status', async () => {
+    const { fileAssociationStatus } = await import('./file-assoc.js');
+    return fileAssociationStatus();
+  });
+
+  ipcMain.handle('fileAssoc:register', async () => {
+    const { registerFileAssociations, fileAssociationStatus } = await import('./file-assoc.js');
+    const status = await fileAssociationStatus();
+    if (!status.usable) {
+      return {
+        ok: false,
+        error: 'This is a development run — build or install 0xMD before registering it.',
+      };
+    }
+    return registerFileAssociations();
+  });
+
+  ipcMain.handle('fileAssoc:unregister', async () => {
+    const { unregisterFileAssociations } = await import('./file-assoc.js');
+    return unregisterFileAssociations();
+  });
+
   // ---- MCP ---------------------------------------------------------------
   ipcMain.handle('mcp:status', () => mcpStatus);
-
   ipcMain.handle('mcp:configure', async (_e, config) => {
     const patch = {};
     if (typeof config?.enabled === 'boolean') patch.mcpEnabled = config.enabled;

@@ -72,6 +72,26 @@ gh workflow run release.yml --ref main -f publish=false
 > build always runs on a `macos-latest` runner — it cannot be produced
 > from Windows or Linux.
 
+## Opening .md files from Explorer
+
+Right-click a Markdown file → **Open with** → 0xMD.
+
+0xMD registers itself for `.md`, `.markdown`, `.mdown`, `.mkd` and `.mdx`:
+
+* the **installer** (`0xMD-*-setup.exe`) does it automatically;
+* the **portable** build can do it from the app: **File → Register as Markdown
+  Handler**, or *Preferences → File associations*.
+
+The registration lives under `HKEY_CURRENT_USER\Software\Classes`, so it
+belongs to your user account only — no administrator rights, and nothing
+outside your profile is touched. The same section in the preferences has a
+button to remove it again.
+
+> Windows protects the *default* handler for a file type, so 0xMD shows up
+> in the "Open with" list but does not silently take over every `.md` file
+> on the machine. Picking it once in "Open with" and choosing **Always use
+> this app** makes it the default.
+
 ## Installing
 
 | Platform | File | Notes |

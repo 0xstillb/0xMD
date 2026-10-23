@@ -56,8 +56,19 @@ const state = {
   outline: [],
   outlineOffsets: new Map(),
   mcpPort: null,
+  loading: false,
   view: null,
 };
+
+/** Swap the document without marking it as edited. */
+function replaceDocument(doc) {
+  state.loading = true;
+  try {
+    state.view.dispatch(state.view.state.tr.replaceWith(0, state.view.state.doc.content.size, doc.content));
+  } finally {
+    state.loading = false;
+  }
+}
 
 /* ------------------------------------------------------------------ *
  * Small helpers
@@ -232,7 +243,7 @@ async function openDocument(filePath) {
 
     const doc = parseMarkdown(file.content);
     if (state.view) {
-      state.view.dispatch(state.view.state.tr.replaceWith(0, state.view.state.doc.content.size, doc.content));
+      replaceDocument(doc);
       state.view.state.doc.setAttribute?.('data-file', file.path);
     }
     document.title = `${file.name} — 0xMD`;
@@ -525,6 +536,14 @@ const mcpCommands = {
       return status;
     });
   },
+  register_file_associations() {
+    return api.registerFileAssoc().then((result) => {
+      if (result?.ok) toast('0xMD is now registered for Markdown files.');
+      else toast(result?.error || 'Could not register the file association.', 'error');
+      refreshFileAssocStatus();
+      return result;
+    });
+  },
   open_quick_open() {
     el.quickOpen.hidden = false;
     el.quickOpenInput.focus();
@@ -588,7 +607,8 @@ async function boot() {
     mount: el.editorHost,
     doc,
     onChange: () => {
-      state.dirty = true;
+      // Loading a document replaces the content, which is not an edit.
+      if (!state.loading) state.dirty = true;
       updateStatus();
       scheduleOutline();
     },
@@ -746,7 +766,7 @@ function setupSidebar() {
         state.fileName = file.name;
         state.dirty = false;
         const parsed = parseMarkdown(file.content);
-        state.view.dispatch(state.view.state.tr.replaceWith(0, state.view.state.doc.content.size, parsed.content));
+        replaceDocument(parsed);
         document.title = `${file.name} — 0xMD`;
         api.recentAdd(file.path);
         state.recent = await api.recentList();
@@ -814,10 +834,46 @@ function setupSidebar() {
   });
 }
 
-function openPreferences() {  openSettings({
+/* ------------------------------------------------------------------ *
+ * File associations — 0xMD in the "Open with" list of Explorer.
+ * ------------------------------------------------------------------ */
+
+async function refreshFileAssocStatus() {
+  const note = document.getElementById('file-assoc-note');
+  const button = document.getElementById('file-assoc-button');
+  if (!note || !button) return;
+
+  try {
+    const status = await api.fileAssocStatus();
+    if (!status.usable) {
+      note.textContent = 'This is a development run, so there is no real executable to register. Build or install 0xMD first, then register it.';
+      button.textContent = 'Register 0xMD for .md files';
+      button.dataset.mode = 'register';
+      button.disabled = true;
+      return;
+    }
+    button.disabled = false;
+
+    if (status.registered) {
+      note.textContent = `0xMD is registered for ${status.extensions.join(', ')}. It now appears in the "Open with" list of Explorer.`;
+      button.textContent = 'Remove the file association';
+      button.dataset.mode = 'unregister';
+    } else {
+      note.textContent = 'Register 0xMD so it shows up in the "Open with" list when you right-click a Markdown file. The setting is stored for your user account only.';
+      button.textContent = 'Register 0xMD for .md files';
+      button.dataset.mode = 'register';
+    }
+  } catch (err) {
+    note.textContent = `Could not read the file association state: ${err?.message || err}`;
+  }
+}
+
+function openPreferences() {
+  openSettings({
     modal: el.settingsModal,
     body: el.settingsBody,
     settings: state.settings,
+    onAssocChanged: refreshFileAssocStatus,
     onSave: async (draft) => {
       state.settings = { ...state.settings, ...draft, editor: { ...state.settings.editor, ...draft.editor } };
       applyTheme();
@@ -835,6 +891,9 @@ function openPreferences() {  openSettings({
     },
     onClose: () => state.view?.focus(),
   });
+
+  // The file-association state is read after the dialog is on screen.
+  setTimeout(refreshFileAssocStatus, 60);
 }
 
 function setupMenuActions() {
@@ -844,7 +903,7 @@ function setupMenuActions() {
         state.filePath = null;
         state.fileName = 'Untitled';
         state.dirty = false;
-        state.view.dispatch(state.view.state.tr.replaceWith(0, state.view.state.doc.content.size, parseMarkdown('').content));
+        replaceDocument(parseMarkdown(''));
         document.title = '0xMD';
         updateStatus();
         break;

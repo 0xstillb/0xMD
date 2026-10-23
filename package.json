@@ -1,7 +1,7 @@
 {
   "name": "0xmd",
   "productName": "0xMD",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Markdown editor where the rendered document is the editor — no licence, no activation.",
   "author": "0xstillb",
   "license": "MIT",
@@ -108,6 +108,15 @@
       "shortcutName": "0xMD",
       "artifactName": "0xMD-${version}-setup.${ext}"
     },
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown", "mdown", "mkd", "mdx"],
+        "name": "Markdown Document",
+        "description": "Markdown Document",
+        "role": "Editor",
+        "mimeType": "text/markdown"
+      }
+    ],
     "mac": {
       "target": [
         "dmg",

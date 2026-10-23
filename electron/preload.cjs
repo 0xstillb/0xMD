@@ -60,7 +60,12 @@ contextBridge.exposeInMainWorld('api', {
   // ---- theme -----------------------------------------------------------
   setTheme: (theme, dark) => invoke('theme:set', { theme, dark }),
 
-  // ---- updates ---------------------------------------------------------
+  // ---- file associations -----------------------------------------------
+  fileAssocStatus: () => invoke('fileAssoc:status'),
+  registerFileAssoc: () => invoke('fileAssoc:register'),
+  unregisterFileAssoc: () => invoke('fileAssoc:unregister'),
+
+// ---- updates ---------------------------------------------------------
   checkForUpdates: () => invoke('update:check'),
   updateStatus: () => invoke('update:status'),
 
