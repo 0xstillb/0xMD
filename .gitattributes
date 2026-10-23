@@ -1,0 +1,13 @@
+# Keep the repository line endings stable: LF in the repository, LF in the
+# working tree, so the files do not churn between platforms.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.exe binary
+*.asar binary

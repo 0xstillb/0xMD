@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+release/
+
+# editor / OS noise
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+
+# 0xMD runtime data
+*.log

@@ -1,0 +1,630 @@
+/* 0xMD — the editor surface.
+ *
+ * A single live surface: the rendered document *is* the editor.
+ *
+ * The structural metrics below (heading scale, block spacing, indents) live
+ * here and read from the variables the theme files define.
+ */
+
+.md-editor {
+  max-width: var(--content-width, 860px);
+  margin: 0 auto;
+  padding: 30px;
+  padding-bottom: 100px;
+  font-family: var(--font-body);
+  font-size: calc(var(--fs-base, 16px) * var(--fs-scale, 1));
+  line-height: calc(var(--lh-base, 1.6) * var(--lh-scale, 1));
+  color: var(--text);
+  outline: none;
+  caret-color: var(--accent);
+}
+
+/* The column widens on large displays. */
+@media only screen and (min-width: 1400px) {
+  .md-editor {
+    max-width: calc(var(--content-width, 860px) * 1.19);
+  }
+}
+
+@media only screen and (min-width: 1800px) {
+  .md-editor {
+    max-width: calc(var(--content-width, 860px) * 1.4);
+  }
+}
+
+.md-editor ::selection {
+  background: var(--selection);
+}
+
+.md-editor p {
+  margin: var(--block-margin, 0.8em) 0;
+  line-height: inherit;
+  /* Soft line breaks stay visible. */
+  white-space: pre-wrap;
+}
+
+/* ---------------------------------------------------------------- *
+ * Headings
+ * ---------------------------------------------------------------- */
+
+.md-editor h1,
+.md-editor h2,
+.md-editor h3,
+.md-editor h4,
+.md-editor h5,
+.md-editor h6 {
+  position: relative;
+  margin: var(--heading-margin, 1rem) 0;
+  font-family: var(--font-heading);
+  font-weight: var(--heading-weight, bold);
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.md-editor h1 {
+  font-size: var(--h1-size, 2.25em);
+  line-height: var(--h1-lh, 1.2);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.md-editor h2 {
+  font-size: var(--h2-size, 1.75em);
+  line-height: var(--h2-lh, 1.225);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.md-editor h3 {
+  font-size: var(--h3-size, 1.5em);
+  line-height: var(--h3-lh, 1.43);
+}
+
+.md-editor h4 {
+  font-size: var(--h4-size, 1.25em);
+}
+
+.md-editor h5 {
+  font-size: var(--h5-size, 1em);
+}
+
+.md-editor h6 {
+  font-size: var(--h6-size, 1em);
+  color: var(--muted);
+}
+
+.md-editor h1 code,
+.md-editor h2 code,
+.md-editor h3 code,
+.md-editor h4 code,
+.md-editor h5 code,
+.md-editor h6 code {
+  font-size: inherit;
+}
+
+/* ---------------------------------------------------------------- *
+ * Inline
+ * ---------------------------------------------------------------- */
+
+.md-editor a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.md-editor a:hover {
+  text-decoration: underline;
+}
+
+.md-editor strong {
+  font-weight: 700;
+}
+
+.md-editor em {
+  font-style: italic;
+}
+
+.md-editor mark {
+  background: var(--mark-bg);
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.md-editor del {
+  color: var(--muted);
+}
+
+.md-editor code {
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
+  font-size: 0.9em;
+  padding: 2px 4px 0;
+  border: 1px solid var(--code-border);
+  border-radius: 3px;
+  background: var(--code-bg);
+  color: inherit;
+}
+
+/* ---------------------------------------------------------------- *
+ * Lists
+ * ---------------------------------------------------------------- */
+
+.md-editor ul,
+.md-editor ol {
+  margin: var(--block-margin, 0.8em) 0;
+  padding-left: var(--list-indent, 30px);
+}
+
+.md-editor li {
+  margin: 0;
+}
+
+.md-editor li > ol,
+.md-editor li > ul {
+  margin: 0;
+}
+
+.md-editor li > p {
+  margin: 0;
+}
+
+.md-editor li p.first {
+  display: inline-block;
+}
+
+.md-list-item {
+  margin: 0;
+}
+
+.md-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  list-style: none;
+}
+
+.md-task-item .md-list-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The paragraph inside a task item must not add its own spacing, or the
+   checkbox ends up on a line of its own. */
+.md-list-item-content > p {
+  margin: 0;
+}
+
+.md-task-checkbox {
+  margin: 0.42em 0.4em 0 0;
+  margin-left: -1.3em;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- *
+ * Blockquote, rule, media
+ * ---------------------------------------------------------------- */
+
+.md-editor blockquote {
+  margin: var(--block-margin, 0.8em) 0;
+  border-left: 4px solid var(--quote-bar);
+  padding: 0 15px;
+  color: var(--quote-text);
+}
+
+.md-editor blockquote > p {
+  margin: 0;
+}
+
+.md-editor hr {
+  height: 2px;
+  padding: 0;
+  margin: var(--hr-margin, 16px) 0;
+  border: 0;
+  background: var(--hr);
+  overflow: hidden;
+}
+
+.md-editor img {
+  max-width: 100%;
+  border-radius: 3px;
+}
+
+/* ---------------------------------------------------------------- *
+ * Tables
+ * ---------------------------------------------------------------- */
+
+.md-editor table {
+  margin: var(--block-margin, 0.8em) 0;
+  padding: 0;
+  word-break: initial;
+  border-collapse: collapse;
+  border-spacing: 0;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.md-editor th,
+.md-editor td {
+  border: 1px solid var(--table-border);
+  margin: 0;
+  padding: 6px 13px;
+  vertical-align: top;
+}
+
+.md-editor th {
+  font-weight: bold;
+  border-bottom-width: 0;
+}
+
+.md-editor thead tr,
+.md-editor tr:nth-child(2n) {
+  background: var(--table-stripe);
+}
+
+.md-editor .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(120, 170, 255, 0.22);
+  pointer-events: none;
+}
+
+.md-editor .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- *
+ * Hidden markdown markers
+ * ---------------------------------------------------------------- */
+
+.md-marker {
+  color: var(--muted);
+  opacity: 0.55;
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, monospace);
+  font-size: 0.9em;
+  user-select: none;
+  pointer-events: none;
+}
+
+.md-marker-heading {
+  color: var(--accent);
+  opacity: 0.75;
+}
+
+.md-active-list-item {
+  list-style: none;
+}
+
+/* ---------------------------------------------------------------- *
+ * Code blocks (CodeMirror)
+ * ---------------------------------------------------------------- */
+
+.md-code-block {
+  margin: 15px 0;
+  border: 1px solid var(--code-border);
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+
+.md-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--code-border);
+  background: var(--code-header-bg);
+  color: var(--muted);
+  font-size: 11px;
+  user-select: none;
+}
+
+.md-code-lang {
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, monospace);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.md-code-button {
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.md-code-button:hover {
+  border-color: var(--code-border);
+  color: var(--accent);
+}
+
+.md-code-editor .cm-editor {
+  background: transparent;
+  font-size: 0.9em;
+}
+
+.md-code-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.md-code-editor .cm-scroller {
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
+  line-height: 1.55;
+  padding: 8px 0 6px;
+}
+
+.md-code-editor .cm-content {
+  padding-left: 4px;
+}
+
+.md-code-editor .cm-gutters {
+  background: var(--code-header-bg);
+  border-right: 1px solid var(--code-border);
+  color: var(--muted);
+}
+
+.md-code-editor .cm-activeLine {
+  background: rgba(120, 170, 255, 0.08);
+}
+
+.md-code-editor .cm-activeLineGutter {
+  background: rgba(120, 170, 255, 0.12);
+}
+
+/* ---------------------------------------------------------------- *
+ * Maths
+ * ---------------------------------------------------------------- */
+
+.md-math-block {
+  margin: 15px 0;
+  padding: 14px 16px;
+  border-radius: 3px;
+  background: var(--math-bg);
+  text-align: center;
+  overflow-x: auto;
+}
+
+.md-math-block-output {
+  min-height: 1.4em;
+}
+
+/* The raw "$$" marker only shows while the formula is being touched. */
+.md-math-block .md-rawblock-control,
+.md-mermaid-block .md-rawblock-control {
+  color: transparent;
+  transition: color 0.15s ease;
+}
+
+.md-math-block:hover .md-rawblock-control,
+.md-math-block.md-selected .md-rawblock-control,
+.md-mermaid-block:hover .md-rawblock-control,
+.md-mermaid-block.md-selected .md-rawblock-control {
+  color: var(--muted);
+}
+
+.md-math-block-editor,
+.md-mermaid-editor {
+  width: 100%;
+  min-height: 68px;
+  padding: 8px 10px;
+  border: 1px solid var(--code-border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, monospace);
+  font-size: 0.9em;
+  resize: vertical;
+  outline: none;
+}
+
+.md-math-inline {
+  display: inline-block;
+  padding: 0 2px;
+  border-radius: 3px;
+}
+
+.md-math-inline:hover {
+  background: var(--math-bg);
+}
+
+.md-math-inline-editor {
+  display: inline-block;
+  min-width: 90px;
+  padding: 0 4px;
+  border-bottom: 1px dashed var(--accent);
+  outline: none;
+}
+
+.md-math-error {
+  color: #cf222e;
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, monospace);
+}
+
+/* ---------------------------------------------------------------- *
+ * Mermaid
+ * ---------------------------------------------------------------- */
+
+.md-mermaid-block {
+  margin: 15px 0;
+  padding: 12px;
+  border: 1px solid var(--code-border);
+  border-radius: 3px;
+  background: var(--mermaid-bg);
+  text-align: center;
+  overflow-x: auto;
+}
+
+.md-mermaid-output svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Safety net: keep the diagram readable whatever Mermaid decided to use. */
+.md-mermaid-output svg text,
+.md-mermaid-output svg .nodeLabel,
+.md-mermaid-output svg .label {
+  fill: var(--text);
+  color: var(--text);
+}
+
+.md-mermaid-output svg .edgePath path,
+.md-mermaid-output svg .flowchart-link {
+  stroke: var(--muted) !important;
+  stroke-width: 1.5px !important;
+}
+
+.md-mermaid-output svg marker path,
+.md-mermaid-output svg marker polygon {
+  fill: var(--muted) !important;
+  stroke: var(--muted) !important;
+}
+
+.md-mermaid-error {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 3px;
+  background: rgba(207, 34, 46, 0.12);
+  color: #cf222e;
+  font-size: 12px;
+  text-align: left;
+  white-space: pre-wrap;
+}
+
+.md-mermaid-source {
+  margin: 0;
+  text-align: left;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- *
+ * Alerts (GitHub callouts)
+ * ---------------------------------------------------------------- */
+
+.md-alert {
+  margin: 15px 0;
+  padding: 10px 14px;
+  border-left: 4px solid var(--border);
+  border-radius: 0 3px 3px 0;
+  background: var(--bg-soft);
+}
+
+.md-alert-note { border-left-color: #0969da; }
+.md-alert-tip { border-left-color: #1a7f37; }
+.md-alert-important { border-left-color: #8250df; }
+.md-alert-warning { border-left-color: #9a6700; }
+.md-alert-caution { border-left-color: #cf222e; }
+
+.md-alert > p:first-child {
+  margin-top: 0;
+}
+.md-alert > p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------------------------------------------------------------- *
+ * Footnotes
+ * ---------------------------------------------------------------- */
+
+.md-footnote-ref {
+  color: var(--link);
+  font-size: 0.75em;
+  padding: 0 1px;
+  cursor: pointer;
+}
+
+[data-0xmd-footnotes] {
+  margin-top: 1em;
+  margin-bottom: 1em;
+  padding-top: 1em;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.md-footnotes-list {
+  margin: 0;
+  padding-left: 1.6em;
+}
+
+.md-footnote-item {
+  margin: 0.3em 0;
+}
+
+.md-footnote-back {
+  margin-left: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.md-footnote-item:hover .md-footnote-back {
+  opacity: 1;
+}
+
+.md-footnote-flash {
+  background: var(--mark-bg);
+  border-radius: 3px;
+}
+
+/* ---------------------------------------------------------------- *
+ * Front matter and raw HTML blocks
+ * ---------------------------------------------------------------- */
+
+[data-0xmd-front-matter] {
+  margin-top: 0 !important;
+  padding: 1rem;
+  font-size: 85%;
+  line-height: 1.45;
+  background: var(--code-bg);
+  border: 0;
+  border-radius: 3px;
+  color: var(--muted);
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, monospace);
+  white-space: pre-wrap;
+}
+
+[data-0xmd-html-block] {
+  white-space: pre-wrap;
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, monospace);
+  font-size: 0.9em;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- *
+ * Placeholder
+ * ---------------------------------------------------------------- */
+
+.md-placeholder-active::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  color: var(--muted);
+  opacity: 0.55;
+  pointer-events: none;
+  height: 0;
+}
+
+/* ---------------------------------------------------------------- *
+ * Source mode (raw markdown view)
+ * ---------------------------------------------------------------- */
+
+.source-mode .md-editor {
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace);
+  font-size: 13px;
+}
+
+.source-mode .md-marker {
+  display: none;
+}

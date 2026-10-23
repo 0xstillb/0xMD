@@ -1,0 +1,61 @@
+/* 0xMD — Pixyll theme (clean blog style).
+ *
+ * A clean blog theme: Merriweather body, generous 914px measure,
+ * roomier line height and table spacing.
+ */
+
+html[data-theme='pixyll'] {
+  --font-body: 'Merriweather', 'PT Serif', Georgia, 'Times New Roman', 'STSong', 'Segoe UI Emoji', 'SF Pro', serif;
+  --font-heading: inherit;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+
+  --fs-base: 1.5rem;
+  --lh-base: 1.5rem;
+  --content-width: 914px;
+
+  --bg: #ffffff;
+  --bg-soft: #f6f8fa;
+  --text: #333333;
+  --muted: #72757a;
+  --link: #2f7fd1;
+  --accent: #2f7fd1;
+
+  --border: #333333;
+  --border-soft: #e3e6ea;
+  --code-border: #e3e6ea;
+  --code-bg: #f4f6f8;
+  --code-header-bg: #eceff2;
+  --math-bg: #f6f8fa;
+
+  --quote-bar: #c8d6e5;
+  --quote-text: #5a6472;
+  --mark-bg: #fdf3c4;
+  --selection: #cfe4f7;
+  --hr: #e3e6ea;
+
+  --table-border: #333333;
+  --table-stripe: #f8fafb;
+
+  --sidebar-bg: #f4f6f8;
+  --sidebar-text: #333333;
+  --sidebar-active: #2f7fd1;
+
+  --heading-weight: bold;
+  --heading-margin: 1rem;
+  --block-margin: 0.8em;
+  --list-indent: 30px;
+  --hr-margin: 16px;
+
+  --h1-size: 2rem;
+  --h1-lh: 2.5rem;
+  --h2-size: 1.5rem;
+  --h2-lh: 2rem;
+  --h3-size: 1.25rem;
+  --h3-lh: 1.5rem;
+  --h4-size: 1.13rem;
+  --h5-size: 1.125rem;
+  --h6-size: 1.125rem;
+
+  --shadow: rgba(40, 50, 60, 0.1);
+  --mermaid-bg: #ffffff;
+}

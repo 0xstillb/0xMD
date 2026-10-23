@@ -1,0 +1,61 @@
+/* 0xMD — Newsprint theme (warm serif paper).
+ *
+ * A warm paper theme: PT Serif, 34em measure, soft spacing.
+ */
+
+html[data-theme='newsprint'] {
+  --font-body: 'PT Serif', 'Times New Roman', 'SF Pro', Times, serif;
+  --font-heading: inherit;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+
+  --fs-base: 16px;
+  --lh-base: 1.5em;
+  /* A 34em column, centred with symmetric padding. */
+  --content-width: 34em;
+
+  --bg: #f3f2ee;
+  --bg-soft: #eae8e2;
+  --text: #1f0909;
+  --muted: #6b625c;
+  --link: #7a4b3a;
+  --accent: #7a4b3a;
+
+  --border: #dcd8d0;
+  --border-soft: #e2ded6;
+  --code-border: #dcd8d0;
+  --code-bg: #eceae4;
+  --code-header-bg: #e6e3dc;
+  --math-bg: #eceae4;
+
+  --quote-bar: #cfc9bd;
+  --quote-text: #5d534c;
+  --mark-bg: #f2e4b4;
+  --selection: rgba(32, 43, 51, 0.63);
+  --hr: #dcd8d0;
+
+  --table-border: #dcd8d0;
+  --table-stripe: #eceae4;
+
+  --sidebar-bg: #eceae4;
+  --sidebar-text: #1f0909;
+  --sidebar-active: #7a4b3a;
+
+  --heading-weight: bold;
+  --heading-margin: 1rem;
+  --block-margin: 0.8em;
+  --list-indent: 30px;
+  --hr-margin: 16px;
+
+  --h1-size: 1.875em;
+  --h1-lh: 1.6em;
+  --h2-size: 1.3125em;
+  --h2-lh: 1.15;
+  --h3-size: 1.3125em;
+  --h3-lh: 1.15;
+  --h4-size: 1.125em;
+  --h5-size: 1em;
+  --h6-size: 1em;
+
+  --shadow: rgba(90, 76, 50, 0.16);
+  --mermaid-bg: #f3f2ee;
+}

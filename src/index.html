@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: https:; font-src 'self' data:; connect-src 'self' ws: http://localhost:*"
+    />
+    <title>0xMD</title>
+    <link rel="stylesheet" href="./styles/base.css" />
+    <link rel="stylesheet" href="./styles/themes/github.css" />
+    <link rel="stylesheet" href="./styles/themes/night.css" />
+    <link rel="stylesheet" href="./styles/themes/newsprint.css" />
+    <link rel="stylesheet" href="./styles/themes/pixyll.css" />
+    <link rel="stylesheet" href="./styles/editor.css" />
+    <link rel="stylesheet" href="./styles/sidebar.css" />
+    <link rel="stylesheet" href="./styles/highlight.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-tabs" role="tablist">
+          <button class="sidebar-tab is-active" data-tab="files" role="tab" title="Files">Files</button>
+          <button class="sidebar-tab" data-tab="outline" role="tab" title="Outline">Outline</button>
+          <button class="sidebar-tab" data-tab="search" role="tab" title="Search">Search</button>
+        </div>
+
+        <div class="sidebar-panels">
+          <section class="sidebar-panel is-active" data-panel="files">
+            <div class="sidebar-panel-toolbar">
+              <button class="sidebar-action" data-action="open-file" title="Open file">Open</button>
+              <button class="sidebar-action" data-action="open-folder" title="Open folder">Folder</button>
+              <button class="sidebar-action" data-action="collapse-all" title="Collapse all">–</button>
+            </div>
+            <div class="sidebar-scroll" id="file-tree"></div>
+            <div class="sidebar-preview" id="file-preview" hidden>
+              <div class="sidebar-preview-title"></div>
+              <pre class="sidebar-preview-body"></pre>
+            </div>
+          </section>
+
+          <section class="sidebar-panel" data-panel="outline">
+            <div class="sidebar-panel-toolbar">
+              <input
+                class="sidebar-filter"
+                id="outline-filter"
+                type="search"
+                placeholder="Filter headings"
+                autocomplete="off"
+              />
+            </div>
+            <div class="sidebar-scroll" id="outline-tree"></div>
+          </section>
+
+          <section class="sidebar-panel" data-panel="search">
+            <div class="sidebar-panel-toolbar">
+              <input
+                class="sidebar-filter"
+                id="folder-search"
+                type="search"
+                placeholder="Search in folder"
+                autocomplete="off"
+              />
+            </div>
+            <div class="sidebar-scroll" id="search-results"></div>
+          </section>
+        </div>
+      </aside>
+
+      <!-- The toggle lives outside the sidebar so it stays reachable even
+           when the sidebar is collapsed. -->
+      <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar (Ctrl+Shift+L)">‹</button>
+
+      <main class="main" id="main">
+        <div class="editor-host" id="editor-host"></div>
+
+        <footer class="statusbar" id="statusbar">
+          <span class="status-item" id="status-path">0xMD</span>
+          <span class="status-spacer"></span>
+          <span class="status-item" id="status-outline"></span>
+          <span class="status-item" id="status-words">0 words</span>
+          <span class="status-item" id="status-mcp" title="MCP server">MCP</span>
+        </footer>
+      </main>
+    </div>
+
+    <!-- Find & replace -->
+    <div class="find-panel" id="find-panel" hidden>
+      <input type="text" id="find-input" placeholder="Find" autocomplete="off" spellcheck="false" />
+      <input type="text" id="replace-input" placeholder="Replace" autocomplete="off" spellcheck="false" />
+      <div class="find-actions">
+        <button data-find-action="previous" title="Previous (Shift+Enter)">↑</button>
+        <button data-find-action="next" title="Next (Enter)">↓</button>
+        <button data-find-action="replace" title="Replace">Replace</button>
+        <button data-find-action="replace-all" title="Replace all">All</button>
+        <button data-find-action="close" title="Close (Esc)">✕</button>
+      </div>
+      <span class="find-status" id="find-status"></span>
+    </div>
+
+    <!-- Quick open -->
+    <div class="quick-open" id="quick-open" hidden>
+      <div class="quick-open-box">
+        <input type="text" id="quick-open-input" placeholder="Open file…" autocomplete="off" spellcheck="false" />
+        <ul class="quick-open-list" id="quick-open-list"></ul>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="settings-modal" id="settings-modal" hidden>
+      <div class="settings-box">
+        <header class="settings-header">
+          <h2>Preferences</h2>
+          <button class="settings-close" id="settings-close" title="Close">✕</button>
+        </header>
+        <div class="settings-body" id="settings-body"></div>
+        <footer class="settings-footer">
+          <span class="settings-note">0xMD — no license, no activation, no telemetry.</span>
+          <button class="settings-save" id="settings-save">Save</button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- About -->
+    <div class="about-modal" id="about-modal" hidden>
+      <div class="about-box">
+        <header class="about-header">
+          <div class="about-logo">0x<span>MD</span></div>
+          <div class="about-title">
+            <h2>0xMD</h2>
+            <p class="about-version" id="about-version">version —</p>
+          </div>
+          <button class="settings-close" id="about-close" title="Close">✕</button>
+        </header>
+
+        <div class="about-body">
+          <p class="about-lead">
+            A Markdown editor where the rendered document <em>is</em> the editor.
+            <strong>No licence key, no activation, no telemetry</strong> — it will never ask for either.
+          </p>
+
+          <dl class="about-facts" id="about-facts">
+            <div><dt>Licence</dt><dd>MIT</dd></div>
+            <div><dt>Runtime</dt><dd id="about-runtime">—</dd></div>
+            <div><dt>Editor engine</dt><dd id="about-engine">—</dd></div>
+            <div><dt>MCP server</dt><dd id="about-mcp">—</dd></div>
+          </dl>
+
+          <h3>Built on</h3>
+          <p class="about-note">
+            Every dependency is MIT / BSD / Apache licensed and every line in this
+            project is original work. See <code>docs/ENGINE.md</code> for how the
+            editor is put together.
+          </p>
+          <ul class="about-deps" id="about-deps"></ul>
+
+          <h3>Third-party licences</h3>
+          <p class="about-note">
+            The bundled packages keep their own copyright and licence terms. Run
+            <code>npm ls --depth=0</code> in the project folder for the full list.
+          </p>
+        </div>
+
+        <footer class="about-footer">
+          <a class="about-link" id="about-docs" href="#">Documentation</a>
+          <a class="about-link" id="about-source" href="#">Project folder</a>
+          <button class="settings-save" id="about-done">Close</button>
+        </footer>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
