@@ -1,0 +1,101 @@
+name: release
+
+# Builds the installers for every platform.
+#
+#   push a tag      → build, publish a GitHub release
+#   manual trigger  → build only (or publish, if asked)
+#
+# The macOS build has to run on macOS: a .dmg is assembled with Apple's
+# own tooling (hdiutil), which is not available on Windows or Linux.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a GitHub release with the artefacts'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows
+            os: windows-latest
+            flags: --win --x64
+          - label: macOS
+            os: macos-latest
+            flags: --mac --x64 --arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the renderer
+        run: npm run build
+
+      - name: Package
+        run: npx electron-builder ${{ matrix.flags }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: 0xmd-${{ matrix.label }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+          if-no-files-found: warn
+
+  release:
+    name: Publish the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artefacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artefacts/*
+          generate_release_notes: true
+          body: |
+            ## 0xMD
+
+            A Markdown editor where the rendered document *is* the editor.
+
+            - Windows: `0xMD-*-portable.exe` (no install needed) and
+              `0xMD-*-setup.exe` (installer)
+            - macOS: `0xMD-*.dmg` — drag 0xMD into your Applications folder
+
+            The macOS build is not signed, so Gatekeeper will quarantine it on
+            first launch. Either right-click the app and choose **Open**, or run:
+
+            ```
+            xattr -cr /Applications/0xMD.app
+            ```
+
+            MIT licensed · no activation · no telemetry.

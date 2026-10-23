@@ -39,6 +39,28 @@ diagram **in place**. There is no preview pane — the document you are editing
 
 ---
 
+## Installing
+
+| Platform | File | Notes |
+|---|---|---|
+| Windows | `0xMD-*-portable.exe` | A single file — run it, no installation. |
+| Windows | `0xMD-*-setup.exe` | A regular installer with a shortcut. |
+| macOS | `0xMD-*.dmg` | Drag **0xMD** into your Applications folder. |
+| macOS | `0xMD-*.zip` | The bare `.app` bundle. |
+
+The macOS build is **not signed**, so Gatekeeper quarantines it on first
+launch. Either right-click the app and choose **Open**, or clear the
+quarantine flag once:
+
+```bash
+xattr -cr /Applications/0xMD.app
+```
+
+> The macOS artefacts are produced by the
+> [release workflow](.github/workflows/release.yml), which runs the macOS
+> build on a `macos-latest` runner — a `.dmg` has to be assembled with
+> Apple's own tooling, so it cannot be produced from Windows or Linux.
+
 ## Running it
 
 ```bash

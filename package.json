@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "node scripts/dev.js",
     "build": "vite build",
+    "icon": "electron scripts/make-icon.js",
     "start": "npm run build && electron .",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win portable",
@@ -71,6 +72,7 @@
   "build": {
     "appId": "io.0xstillb.0xmd",
     "productName": "0xMD",
+    "icon": "build/icon.png",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -82,12 +84,40 @@
     ],
     "win": {
       "target": [
-        "portable"
+        "portable",
+        "nsis"
       ],
       "artifactName": "0xMD-${version}.${ext}"
     },
     "portable": {
       "artifactName": "0xMD-${version}-portable.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "0xMD",
+      "artifactName": "0xMD-${version}-setup.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "darkModeSupport": true,
+      "artifactName": "0xMD-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "0xMD ${version}",
+      "icon": "build/icon.png",
+      "backgroundColor": "#ffffff",
+      "window": {
+        "width": 540,
+        "height": 380
+      }
     }
   }
 }
