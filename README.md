@@ -39,6 +39,39 @@ diagram **in place**. There is no preview pane — the document you are editing
 
 ---
 
+## Building a release
+
+The repository publishes itself. Tag a version and the CI does the rest:
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+The [release workflow](.github/workflows/release.yml) then:
+
+1. builds the renderer and packages the app on **Windows** (portable exe +
+   NSIS installer) and on **macOS** (`.dmg` + `.zip`, Intel and Apple
+   Silicon);
+2. uploads everything as workflow artefacts;
+3. creates a GitHub release for the tag, marked as **Latest**, with the
+   `latest.yml` update manifests attached.
+
+Those manifests are what the app's own update check reads, so a tagged
+release also reaches anyone running an older build — 0xMD checks for a
+newer version a few seconds after it starts, and installs it on the next
+quit. There is also **Help → Check for Updates…** for a manual check.
+
+You can trigger the same build without publishing by hand:
+
+```bash
+gh workflow run release.yml --ref main -f publish=false
+```
+
+> A `.dmg` has to be assembled with Apple's own tooling, so the macOS
+> build always runs on a `macos-latest` runner — it cannot be produced
+> from Windows or Linux.
+
 ## Installing
 
 | Platform | File | Notes |

@@ -4,6 +4,8 @@
 // (MIT/BSD/Apache). The app has no licence key and no telemetry.
 
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell, nativeTheme } from 'electron';
+// electron-updater is CommonJS, so it comes in through the default export.
+import electronUpdater from 'electron-updater';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -105,14 +107,33 @@ function deepMerge(target, source) {
   return target;
 }
 
-async function saveSettings(patch) {
+let settingsSaveCounter = 0;
+// Saves are chained: Windows refuses to rename over a file that another
+// rename is touching, so only one write may be in flight at a time.
+let settingsSaveChain = Promise.resolve();
+
+async function writeSettings(patch) {
   const current = await loadSettings();
   settings = deepMerge(current, patch);
   await fs.mkdir(path.dirname(settingsPath()), { recursive: true });
-  const tmp = `${settingsPath()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(settings, null, 2), 'utf8');
-  await fs.rename(tmp, settingsPath());
+
+  const tmp = `${settingsPath()}.${process.pid}.${++settingsSaveCounter}.tmp`;
+  try {
+    await fs.writeFile(tmp, JSON.stringify(settings, null, 2), 'utf8');
+    await fs.rename(tmp, settingsPath());
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => {});
+    throw err;
+  }
   return settings;
+}
+
+async function saveSettings(patch) {
+  settingsSaveChain = settingsSaveChain.then(
+    () => writeSettings(patch),
+    () => writeSettings(patch),
+  );
+  return settingsSaveChain;
 }
 
 /* ------------------------------------------------------------------ *
@@ -453,6 +474,8 @@ function buildMenu() {
       label: 'Help',
       submenu: [
         { label: 'Markdown Guide', click: () => send('help.markdown') },
+        { label: 'Check for Updates…', click: () => checkForUpdates() },
+        { type: 'separator' },
         { label: 'About 0xMD', click: () => send('help.about') },
       ],
     },
@@ -496,6 +519,67 @@ ipcMain.on('mcp:result', (_event, { id, result }) => {
   const settle = mcpPending.get(id);
   if (settle) settle(result);
 });
+
+/* ------------------------------------------------------------------ *
+ * Updates — the app keeps itself up to date from the GitHub releases.
+ * ------------------------------------------------------------------ */
+
+let updateStatus = { checking: false, available: false, version: null, error: null };
+
+const { autoUpdater } = electronUpdater;
+
+async function checkForUpdates({ silent = false } = {}) {
+  if (!app.isPackaged) {
+    if (!silent) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        message: 'Updates are only available in a packaged build.',
+        detail: 'Run `npm run dist` to produce one, or use the GitHub releases.',
+      });
+    }
+    return { checking: false, available: false };
+  }
+
+  updateStatus = { checking: true, available: false, version: null, error: null };
+
+  try {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.logger = null;
+
+    const result = await autoUpdater.checkForUpdates();
+    const version = result?.updateInfo?.version ?? null;
+
+    updateStatus = { checking: false, available: !!version, version, error: null };
+
+    if (!silent && version) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        message: `0xMD ${version} is available.`,
+        detail: 'It will be downloaded and installed the next time you quit.',
+        buttons: ['OK'],
+      });
+    } else if (!silent && !version) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        message: '0xMD is up to date.',
+        buttons: ['OK'],
+      });
+    }
+    return updateStatus;
+  } catch (err) {
+    updateStatus = { checking: false, available: false, version: null, error: String(err?.message || err) };
+    if (!silent) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        message: 'Could not check for updates.',
+        detail: updateStatus.error,
+        buttons: ['OK'],
+      });
+    }
+    return updateStatus;
+  }
+}
 
 /* ------------------------------------------------------------------ *
  * MCP server lifecycle — it can be switched on and off at runtime.
@@ -690,6 +774,10 @@ function registerIpc() {
     return true;
   });
 
+  // ---- updates -----------------------------------------------------------
+  ipcMain.handle('update:check', () => checkForUpdates());
+  ipcMain.handle('update:status', () => updateStatus);
+
   // ---- MCP ---------------------------------------------------------------
   ipcMain.handle('mcp:status', () => mcpStatus);
 
@@ -736,6 +824,9 @@ if (!app.requestSingleInstanceLock()) {
 
     // The MCP server binds to localhost only and can be switched off.
     await applyMcpSettings();
+
+    // Look for a newer release in the background.
+    setTimeout(() => { checkForUpdates({ silent: true }); }, 8000);
 
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) await createWindow();

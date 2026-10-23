@@ -1,9 +1,9 @@
 name: release
 
-# Builds the installers for every platform.
+# Builds the installers for every platform and publishes them as a release.
 #
-#   push a tag      → build, publish a GitHub release
-#   manual trigger  → build only (or publish, if asked)
+#   push a tag `v1.2.3`  → build, publish a GitHub release, mark it "Latest"
+#   manual trigger       → build only (or publish, if asked)
 #
 # The macOS build has to run on macOS: a .dmg is assembled with Apple's
 # own tooling (hdiutil), which is not available on Windows or Linux.
@@ -17,7 +17,7 @@ on:
       publish:
         description: 'Publish a GitHub release with the artefacts'
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
@@ -65,6 +65,8 @@ jobs:
             release/*.dmg
             release/*.zip
             release/*.blockmap
+            release/latest.yml
+            release/latest-mac.yml
           if-no-files-found: warn
 
   release:
@@ -78,24 +80,53 @@ jobs:
           path: artefacts
           merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
+      - name: Move the update manifests into place
+        run: |
+          # electron-updater looks for these next to the installers.
+          cd artefacts
+          if ls latest-mac*.yml >/dev/null 2>&1; then
+            mv latest-mac*.yml latest-mac.yml 2>/dev/null || true
+          fi
+          ls -1
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
         with:
-          files: artefacts/*
+          # The tag that was pushed is the release tag.
+          tag_name: ${{ github.ref_name }}
+          name: 0xMD ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          # This release becomes the one GitHub shows as "Latest".
+          make_latest: true
           generate_release_notes: true
+          files: |
+            artefacts/*.exe
+            artefacts/*.dmg
+            artefacts/*.zip
+            artefacts/*.blockmap
+            artefacts/latest.yml
+            artefacts/latest-mac.yml
           body: |
-            ## 0xMD
+            ## 0xMD ${{ github.ref_name }}
 
             A Markdown editor where the rendered document *is* the editor.
 
-            - Windows: `0xMD-*-portable.exe` (no install needed) and
-              `0xMD-*-setup.exe` (installer)
-            - macOS: `0xMD-*.dmg` — drag 0xMD into your Applications folder
+            | Platform | File |
+            | --- | --- |
+            | Windows | `0xMD-*-portable.exe` — a single file, no installation |
+            | Windows | `0xMD-*-setup.exe` — a regular installer |
+            | macOS (Intel) | `0xMD-*-x64.dmg` |
+            | macOS (Apple Silicon) | `0xMD-*-arm64.dmg` |
 
-            The macOS build is not signed, so Gatekeeper will quarantine it on
-            first launch. Either right-click the app and choose **Open**, or run:
+            The macOS build is not signed, so Gatekeeper quarantines it on first
+            launch. Either right-click the app and choose **Open**, or run:
 
             ```
             xattr -cr /Applications/0xMD.app
             ```
+
+            0xMD can also update itself — the update manifests (`latest.yml`)
+            are attached to this release.
 
             MIT licensed · no activation · no telemetry.

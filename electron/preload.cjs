@@ -60,6 +60,10 @@ contextBridge.exposeInMainWorld('api', {
   // ---- theme -----------------------------------------------------------
   setTheme: (theme, dark) => invoke('theme:set', { theme, dark }),
 
+  // ---- updates ---------------------------------------------------------
+  checkForUpdates: () => invoke('update:check'),
+  updateStatus: () => invoke('update:status'),
+
   // ---- events from main ------------------------------------------------
   onMenuAction: (handler) => {
     const listener = (_event, payload) => handler(payload);

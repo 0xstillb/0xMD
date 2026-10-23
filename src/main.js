@@ -519,6 +519,12 @@ const mcpCommands = {
     }, 400);
     return Promise.resolve({ restarting: true, enabled: enabled ?? null, port: port ?? null });
   },
+  check_updates() {
+    return api.updateStatus().then((status) => {
+      api.checkForUpdates().catch(() => {});
+      return status;
+    });
+  },
   open_quick_open() {
     el.quickOpen.hidden = false;
     el.quickOpenInput.focus();
@@ -621,8 +627,6 @@ async function boot() {
 
   // Pick up the MCP server state (it may have been switched off).
   try {
-    const status = await api.mcpStatus();
-    api.onMcpStatus?.(status);
     const current = await api.mcpStatus();
     state.mcpPort = current.running ? current.port : null;
     el.statusMcp.textContent = current.running ? `MCP :${current.port}` : 'MCP off';
@@ -913,10 +917,13 @@ function setupMenuActions() {
       case 'help.about':
         openAbout();
         break;
+      case 'help.checkUpdates':
+        toast('Checking for updates…');
+        api.checkForUpdates().catch(() => toast('Could not check for updates.', 'error'));
+        break;
       case 'help.markdown':
         window.open('https://commonmark.org/help/', '_blank');
-        break;
-      default:
+        break;      default:
         if (action.startsWith('format.')) runCommand(action, payload);
         break;
     }

@@ -368,6 +368,22 @@ function buildServer({ callRenderer, getContext }) {
   );
 
   server.registerTool(
+    'check_updates',
+    {
+      title: 'Check for updates',
+      description: 'Looks for a newer 0xMD release on GitHub.',
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        return ok(await callRenderer('check_updates', {}));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
     'get_app_info',
     {
       title: 'Get application info',
