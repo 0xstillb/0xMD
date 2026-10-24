@@ -102,7 +102,78 @@ painted text.
 * **Raw HTML.** `src/core/nodeviews/html-block.js` renders it, but only
   after DOMPurify has stripped anything that could run.
 
-## 5. Rendering engines
+## 5. EPUB package documents
+
+An `.opf` file is not a document 0xMD can edit — it is the *index* of an
+EPUB: the metadata of the book, the files it contains (the manifest) and
+the order they are read in (the spine).
+
+It is read in two steps, both in `src/core/opf/`:
+
+```
+.opf XML ──▶ xml.js ──▶ element tree ──▶ opf.js ──▶ package model
+                                                        │
+                                                        ├──▶ the viewer (read-only)
+                                                        └──▶ a Markdown summary
+```
+
+* **`src/core/opf/xml.js`** is a small XML reader — elements, attributes,
+  text, CDATA, entities, comments and the doctype. It never throws: a
+  broken file is reported, not crashed on.
+* **`src/core/opf/opf.js`** turns the tree into the model: the `dc:` metadata
+  (title, authors and their roles, language, identifiers, publisher, date,
+  cover), the manifest, the spine and the EPUB 2 guide. EPUB 3 refinements
+  (`<meta refines="#…">`) are resolved, so an author's role is known.
+* **`src/ui/opf-viewer.js`** draws it: metadata as a table, the manifest as a
+  table, the reading order as a list. The raw XML is one button away.
+
+The two modules are plain JavaScript — no DOM, no Node — so the **main
+process** can use them as well. That is how the MCP server answers
+`read_file` for a package with its structure rather than with raw XML.
+
+A package is **read-only**: the file on disk is never rewritten, and the
+editor surface steps aside while the package is open. What can be written is
+a *summary* — `Save as Markdown…`, or **File → Export as HTML/PDF**.
+
+## 6. EPUB books
+
+An `.epub` file is a ZIP archive: the package, the chapters and the images.
+Reading it takes three steps, and each one lives where it belongs.
+
+```
+book.epub ──▶ zip.js ──▶ META-INF/container.xml ──▶ content.opf
+                     │                                   │
+                     │                                   ▼
+                     │                            the package model
+                     ▼                                   │
+             the chapter files ◀──────────────── the reading order
+                     │
+                     ▼
+              xhtml.js ──▶ Markdown ──▶ the editor
+```
+
+* **`electron/zip.js`** is a small ZIP reader: the central directory, the
+  local headers, and `zlib.inflateRawSync` for the deflated entries. No
+  dependency, and it reads the whole archive into memory — which is what a
+  book wants.
+* **`src/core/epub/container.js`** reads `META-INF/container.xml`, finds
+  the package inside the archive and works out where each file of the
+  package really lives (`text/chapter-01.xhtml` in `OEBPS/content.opf`
+  means `OEBPS/text/chapter-01.xhtml`). Hrefs are percent-decoded on the
+  way.
+* **`src/core/epub/xhtml.js`** turns a chapter into Markdown. It runs in
+  the renderer, where the DOM lives: headings, paragraphs, lists, quotes,
+  tables, code, images, links and line breaks all become Markdown, and
+  the editor treats the chapter like any other document.
+
+The book is **read-only**: the archive is never written to. A chapter can
+be edited, and saving it writes a Markdown file of its own.
+
+The XHTML → Markdown step happens in the renderer on purpose. That is also
+why the MCP server asks the renderer for a chapter (`read_epub_chapter`)
+instead of converting it itself: the main process has no DOM.
+
+## 7. Rendering engines
 
 | Concern | Engine | Why |
 |---|---|---|
@@ -115,7 +186,7 @@ painted text.
 | Export colouring | **highlight.js** | covers the exported HTML |
 | Raw HTML | **DOMPurify** | a `.md` file must never be able to run scripts |
 
-## 6. Themes
+## 8. Themes
 
 A theme is a set of CSS custom properties in `src/styles/themes/`. The
 structural metrics — heading scale, block spacing, indents, code and table
@@ -138,7 +209,7 @@ The column widens on large displays (860 → 1024 → 1200px) and the theme
 owns the measure; the preferences only *scale* the type and can override the
 width explicitly.
 
-## 7. MCP
+## 9. MCP
 
 0xMD runs an MCP server inside the main process
 (`electron/mcp.js`), reachable at `http://127.0.0.1:7331/mcp` over the

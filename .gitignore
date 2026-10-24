@@ -5,6 +5,7 @@ node_modules/
 dist/
 release/
 release-build*/
+release-verify*/
 .verify/
 
 # editor / OS noise

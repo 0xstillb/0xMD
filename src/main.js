@@ -15,6 +15,10 @@ import { renderFileTree } from './ui/file-tree.js';
 import { createFind } from './ui/find.js';
 import { createQuickOpen } from './ui/quick-open.js';
 import { openSettings } from './ui/settings.js';
+import { parseOpf, opfToMarkdown, isOpfPath } from './core/opf/opf.js';
+import { renderOpf } from './ui/opf-viewer.js';
+import { xhtmlToMarkdown } from './core/epub/xhtml.js';
+import { isEpubPath } from './core/epub/container.js';
 
 const api = window.api;
 
@@ -58,6 +62,13 @@ const state = {
   mcpPort: null,
   loading: false,
   view: null,
+  // "markdown" for the editor, "opf" for an EPUB package document,
+  // "epub" for the index of a book and "epub-chapter" for one of its chapters.
+  fileType: 'markdown',
+  opf: null,
+  opfSections: [],
+  epub: null,
+  epubChapter: null,
 };
 
 /** Swap the document without marking it as edited. */
@@ -84,6 +95,10 @@ function toast(message, kind = 'info') {
 }
 
 function currentMarkdown() {
+  // An EPUB package is not a markdown document, but it still has a
+  // readable summary — that is what gets exported, and what an agent
+  // receives from the MCP server.
+  if (state.fileType === 'opf') return state.opf ? opfToMarkdown(state.opf) : '';
   if (!state.view) return '';
   return serializeMarkdown(state.view.state.doc);
 }
@@ -188,6 +203,26 @@ async function setTheme(theme) {
  * ------------------------------------------------------------------ */
 
 function updateStatus() {
+  el.statusPath.textContent = `${state.dirty ? '● ' : ''}${state.fileName}${state.filePath ? '' : ' — unsaved'}`;
+
+  if (state.fileType === 'opf') {
+    // A package has no words to count — it has files and a reading order.
+    el.statusWords.textContent = state.opf
+      ? `EPUB ${state.opf.version || '?'} · ${state.opf.manifest.length} files · ${state.opf.spine.items.length} in reading order`
+      : 'EPUB package';
+    el.statusOutline.textContent = state.outline.length ? `${state.outline.length} sections` : 'EPUB package';
+    return;
+  }
+
+  if (state.fileType === 'epub') {
+    const book = state.epub;
+    el.statusWords.textContent = book
+      ? `EPUB ${book.package.version || '?'} · ${book.package.manifest.length} files · ${book.chapters.length} chapters`
+      : 'EPUB book';
+    el.statusOutline.textContent = state.outline.length ? `${state.outline.length} sections` : 'EPUB book';
+    return;
+  }
+
   const doc = state.view?.state.doc;
   if (!doc) return;
 
@@ -196,7 +231,6 @@ function updateStatus() {
   const chars = text.length;
 
   el.statusWords.textContent = `${words} word${words === 1 ? '' : 's'} · ${chars} char${chars === 1 ? '' : 's'}`;
-  el.statusPath.textContent = `${state.dirty ? '● ' : ''}${state.fileName}${state.filePath ? '' : ' — unsaved'}`;
   el.statusOutline.textContent = state.outline.length ? `${state.outline.length} headings` : '';
 }
 
@@ -206,6 +240,26 @@ function updateStatus() {
 
 function refreshOutline() {
   if (!state.view) return;
+
+  if (state.fileType === 'opf') {
+    // A package has no headings — the outline lists the sections of the
+    // viewer instead, and jumps to them.
+    state.outline = state.opfSections.map((section, index) => ({
+      level: 1,
+      text: section.title,
+      pos: index,
+    }));
+    renderOutline(el.outlineTree, state.outline, {
+      filter: el.outlineFilter.value,
+      onSelect: (item) => {
+        const section = state.opfSections[item.pos];
+        if (section) document.getElementById(section.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
+    });
+    updateStatus();
+    return;
+  }
+
   state.outline = buildOutline(state.view.state.doc);
   renderOutline(el.outlineTree, state.outline, {
     filter: el.outlineFilter.value,
@@ -241,11 +295,10 @@ async function openDocument(filePath) {
     state.fileName = file.name;
     state.dirty = false;
 
-    const doc = parseMarkdown(file.content);
-    if (state.view) {
-      replaceDocument(doc);
-      state.view.state.doc.setAttribute?.('data-file', file.path);
-    }
+    if (isEpubPath(file.path)) await openEpubDocument(file);
+    else if (isOpfPath(file.path)) showOpfDocument(file);
+    else showMarkdownDocument(file);
+
     document.title = `${file.name} — 0xMD`;
     api.recentAdd(file.path);
     state.recent = await api.recentList();
@@ -258,7 +311,258 @@ async function openDocument(filePath) {
   }
 }
 
+/** Load a Markdown file into the editor. */
+function showMarkdownDocument(file) {
+  state.fileType = 'markdown';
+  state.opf = null;
+  state.opfSections = [];
+  setSurface('markdown');
+  const doc = parseMarkdown(file.content);
+  if (state.view) {
+    replaceDocument(doc);
+    state.view.state.doc.setAttribute?.('data-file', file.path);
+  }
+}
+
+/**
+ * Show an EPUB package document.
+ *
+ * A .opf file is the index of an EPUB, not a document 0xMD can edit, so it
+ * gets its own read-only surface: the metadata, the manifest and the
+ * reading order.
+ */
+function showOpfDocument(file) {
+  state.fileType = 'opf';
+  setSurface('opf');
+
+  let model = null;
+  let error = null;
+  try {
+    model = parseOpf(file.content);
+  } catch (err) {
+    error = err;
+  }
+  state.opf = model;
+
+  const host = opfHost();
+  const { sections } = renderOpf(host, {
+    model,
+    error,
+    raw: file.content,
+    onReveal: (href) => revealPackageFile(href),
+    onSaveMarkdown: () => saveOpfAsMarkdown(),
+  });
+  state.opfSections = sections;
+}
+
+/** The element the package viewer lives in. */
+function opfHost() {
+  let host = el.editorHost.querySelector('.opf-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.className = 'opf-host';
+    el.editorHost.append(host);
+  }
+  return host;
+}
+
+/** Switch between the editor surface and the package viewer. */
+function setSurface(kind) {
+  el.editorHost.classList.toggle('is-opf', kind === 'opf');
+  if (kind !== 'opf') {
+    el.editorHost.querySelector('.opf-host')?.remove();
+  }
+  if (kind !== 'epub-chapter') {
+    el.editorHost.querySelector('.epub-banner')?.remove();
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * EPUB books
+ * ------------------------------------------------------------------ */
+
+/**
+ * Open an EPUB book.
+ *
+ * The book is a ZIP archive: its package is read with the same reader that
+ * reads a .opf file, and its chapters are read one at a time.
+ */
+async function openEpubDocument(file) {
+  state.fileType = 'epub';
+  state.epubChapter = null;
+
+  let epub = null;
+  let error = null;
+  try {
+    epub = await api.epubOpen(file.path);
+  } catch (err) {
+    error = err;
+  }
+  state.epub = epub;
+
+  if (error) {
+    setSurface('opf');
+    state.opfSections = [];
+    renderOpf(opfHost(), { model: null, error, raw: '' });
+    return;
+  }
+
+  // The raw package is small, and it is what "View XML" shows.
+  let raw = '';
+  try {
+    raw = (await api.epubRead(epub.path, epub.rootfile)).html;
+  } catch {
+    /* the package is already parsed — the raw text is a nicety */
+  }
+
+  renderEpubViewer(epub, raw);
+}
+
+/** Draw the index of a book. */
+function renderEpubViewer(epub, raw = '') {
+  setSurface('opf');
+  state.fileType = 'epub';
+  state.opfSections = [];
+
+  // The chapters know where they live inside the archive.
+  const model = {
+    ...epub.package,
+    spine: {
+      ...epub.package.spine,
+      items: epub.package.spine.items.map((item, index) => ({
+        ...item,
+        path: epub.chapters[index]?.path ?? '',
+        title: epub.chapters[index]?.title || item.title,
+      })),
+    },
+  };
+
+  const { sections } = renderOpf(opfHost(), {
+    model,
+    raw,
+    onOpenChapter: (item) => openEpubChapter(epub, item),
+    onSaveMarkdown: () => saveOpfAsMarkdown(),
+  });
+  state.opfSections = sections;
+}
+
+/**
+ * Open a chapter of a book.
+ *
+ * The chapter is XHTML; it is converted to Markdown, so it can be read and
+ * edited like any other document — and saved as a Markdown file.
+ */
+async function openEpubChapter(epub, chapter) {
+  try {
+    const { html } = await api.epubRead(epub.path, chapter.path);
+    const markdown = xhtmlToMarkdown(html);
+
+    state.fileType = 'epub-chapter';
+    state.epubChapter = chapter;
+    state.fileName = chapter.title || chapter.path;
+
+    setSurface('markdown');
+    showChapterBanner(epub, chapter);
+
+    if (state.view) replaceDocument(parseMarkdown(markdown));
+    refreshOutline();
+    updateStatus();
+  } catch (err) {
+    toast(`Could not open the chapter: ${err.message}`, 'error');
+  }
+}
+
+/** The bar above a chapter, with the way back to the index of the book. */
+function showChapterBanner(epub, chapter) {
+  let banner = el.editorHost.querySelector('.epub-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.className = 'epub-banner';
+    el.editorHost.prepend(banner);
+  }
+  banner.innerHTML = '';
+
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'epub-back';
+  back.textContent = '←';
+  back.title = 'Back to the book';
+  back.addEventListener('click', () => {
+    state.fileType = 'epub';
+    state.epubChapter = null;
+    state.fileName = epub.name;
+    renderEpubViewer(epub);
+    refreshOutline();
+    updateStatus();
+  });
+
+  const title = document.createElement('span');
+  title.className = 'epub-banner-title';
+  title.textContent = chapter.title || chapter.path;
+
+  const source = document.createElement('span');
+  source.className = 'epub-banner-source';
+  source.textContent = `from ${epub.name}`;
+
+  banner.append(back, title, source);
+}
+
+/** A file name a chapter can be saved under. */
+function chapterFileName(chapter) {
+  const base = String(chapter?.title || 'chapter')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return base || 'chapter';
+}
+
+/**
+ * Show a file the package refers to, in the file manager of the system.
+ * The hrefs are relative to the folder the package itself lives in.
+ */
+async function revealPackageFile(href) {
+  if (!href || !state.filePath) return;
+  const separator = state.filePath.includes('\\') ? '\\' : '/';
+  const folder = state.filePath.slice(0, state.filePath.lastIndexOf(separator));
+  const target = `${folder}${separator}${href.split('/').join(separator)}`;
+  try {
+    const exists = await api.fileExists(target);
+    if (!exists) {
+      toast(`Not found next to the package: ${href}`, 'error');
+      return;
+    }
+    api.revealFile(target);
+  } catch {
+    toast(`Could not show ${href}`, 'error');
+  }
+}
+
+/** Write the summary of a package to a Markdown file. */
+async function saveOpfAsMarkdown() {
+  const model = state.fileType === 'epub' ? state.epub?.package : state.opf;
+  if (!model) return;
+  const base = (state.fileName || 'package').replace(/\.(opf|epub)$/i, '') || 'package';
+  const saved = await api.saveFileDialog(opfToMarkdown(model), `${base}.md`);
+  if (saved) toast(`Saved ${saved.split(/[\\/]/).pop()}`);
+}
+
 async function saveDocument({ forceAs = false } = {}) {
+  if (state.fileType === 'opf') {
+    toast('EPUB package documents are read-only in 0xMD — use “Save as Markdown…” for a summary.', 'info');
+    return false;
+  }
+  if (state.fileType === 'epub') {
+    toast('EPUB books are read-only in 0xMD — open a chapter and save that.', 'info');
+    return false;
+  }
+  if (state.fileType === 'epub-chapter') {
+    // A chapter is a scratch document: it is written as a Markdown file,
+    // never back into the book.
+    const saved = await api.saveFileDialog(currentMarkdown(), `${chapterFileName(state.epubChapter)}.md`);
+    if (!saved) return false;
+    toast(`Saved ${saved.split(/[\\/]/).pop()}`);
+    return true;
+  }
   if (!state.view) return false;
   const content = currentMarkdown();
 
@@ -323,7 +627,9 @@ function buildExportHtml() {
   const doc = state.view.state.doc;
   const html = markdownIt.render(currentMarkdown());
   const s = state.settings;
-  const title = state.fileName.replace(/\.mdx?$/i, '');
+  const title = state.fileType === 'opf'
+    ? (state.opf?.metadata.title || state.fileName.replace(/\.opf$/i, ''))
+    : state.fileName.replace(/\.mdx?$/i, '');
 
   return `<!doctype html>
 <html lang="en">
@@ -449,6 +755,13 @@ function insertMermaid() {
  * MCP command channel
  * ------------------------------------------------------------------ */
 
+/** An EPUB package is read-only — an agent may read it, not write it. */
+function assertEditable() {
+  if (state.fileType === 'opf' || state.fileType === 'epub') {
+    throw new Error('EPUB packages and books are read-only in 0xMD.');
+  }
+}
+
 const mcpCommands = {
   async open_document({ path }) {
     await openDocument(path);
@@ -456,6 +769,25 @@ const mcpCommands = {
   },
   read_document() {
     return { path: state.filePath, markdown: currentMarkdown() };
+  },
+  /**
+   * Read a chapter of a book. The XHTML is turned into Markdown in the
+   * renderer — that is where the DOM lives.
+   */
+  async read_epub_chapter({ path: filePath, index = 0, href }) {
+    const epub = state.epub?.path === filePath ? state.epub : await api.epubOpen(filePath);
+    const chapter = href
+      ? epub.chapters.find((item) => item.path === href || item.href === href)
+      : epub.chapters[index];
+    if (!chapter) throw new Error(`This book has no chapter "${href ?? index}".`);
+
+    const { html } = await api.epubRead(epub.path, chapter.path);
+    return {
+      path: epub.path,
+      chapter: chapter.title,
+      index: chapter.index,
+      markdown: xhtmlToMarkdown(html),
+    };
   },
   get_outline() {
     return state.outline.map((h) => ({ level: h.level, text: h.text, position: h.pos }));
@@ -465,15 +797,18 @@ const mcpCommands = {
     return { text: state.view.state.doc.textBetween(from, to, ' '), from, to };
   },
   insert_text({ text }) {
+    assertEditable();
     state.view.dispatch(state.view.state.tr.insertText(text));
     return { ok: true };
   },
   replace_selection({ text }) {
+    assertEditable();
     const { from, to } = state.view.state.selection;
     state.view.dispatch(state.view.state.tr.insertText(text, from, to));
     return { ok: true };
   },
   append_text({ text }) {
+    assertEditable();
     const end = state.view.state.doc.content.size;
     state.view.dispatch(state.view.state.tr.insertText(text, end));
     return { ok: true };
@@ -486,6 +821,12 @@ const mcpCommands = {
     return { theme: state.settings.theme, dark: state.settings.themeDark };
   },
   async save_document() {
+    if (state.fileType === 'opf' || state.fileType === 'epub') {
+      throw new Error('EPUB packages and books are read-only in 0xMD.');
+    }
+    if (state.fileType === 'epub-chapter') {
+      throw new Error('A chapter of an EPUB cannot be written back into the book — export it instead.');
+    }
     if (!state.filePath) {
       throw new Error('The document has no path yet — save it once in the app first.');
     }
@@ -538,7 +879,7 @@ const mcpCommands = {
   },
   register_file_associations() {
     return api.registerFileAssoc().then((result) => {
-      if (result?.ok) toast('0xMD is now registered for Markdown files.');
+      if (result?.ok) toast('0xMD is now registered for Markdown and EPUB package files.');
       else toast(result?.error || 'Could not register the file association.', 'error');
       refreshFileAssocStatus();
       return result;
@@ -621,6 +962,7 @@ async function boot() {
   setupQuickOpen();
   setupSidebar();
   setupMenuActions();
+  setupFileEvents();
   setupDragAndDrop();
   setupBeforeUnload();
   setupAboutDialog();
@@ -677,6 +1019,11 @@ async function boot() {
     configureMcp: (config) => api.configureMcp(config),
     setTheme,
     mcpCommands,
+    // The EPUB package reader, for the smoke test and the devtools console.
+    parseOpf,
+    opfToMarkdown,
+    isOpfPath,
+    renderOpf,
   };
   window.__0xmdReady = true;
 }
@@ -761,19 +1108,7 @@ function setupSidebar() {
   document.querySelectorAll('[data-action="open-file"]').forEach((button) => {
     button.addEventListener('click', async () => {
       const file = await api.openFileDialog();
-      if (file) {
-        state.filePath = file.path;
-        state.fileName = file.name;
-        state.dirty = false;
-        const parsed = parseMarkdown(file.content);
-        replaceDocument(parsed);
-        document.title = `${file.name} — 0xMD`;
-        api.recentAdd(file.path);
-        state.recent = await api.recentList();
-        api.watch([file.path]);
-        refreshOutline();
-        updateStatus();
-      }
+      if (file) openDocument(file.path);
     });
   });
 
@@ -847,7 +1182,7 @@ async function refreshFileAssocStatus() {
     const status = await api.fileAssocStatus();
     if (!status.usable) {
       note.textContent = 'This is a development run, so there is no real executable to register. Build or install 0xMD first, then register it.';
-      button.textContent = 'Register 0xMD for .md files';
+      button.textContent = 'Register 0xMD for .md and .opf files';
       button.dataset.mode = 'register';
       button.disabled = true;
       return;
@@ -859,8 +1194,8 @@ async function refreshFileAssocStatus() {
       button.textContent = 'Remove the file association';
       button.dataset.mode = 'unregister';
     } else {
-      note.textContent = 'Register 0xMD so it shows up in the "Open with" list when you right-click a Markdown file. The setting is stored for your user account only.';
-      button.textContent = 'Register 0xMD for .md files';
+      note.textContent = 'Register 0xMD so it shows up in the "Open with" list when you right-click a Markdown file or an EPUB package. The setting is stored for your user account only.';
+      button.textContent = 'Register 0xMD for .md and .opf files';
       button.dataset.mode = 'register';
     }
   } catch (err) {
@@ -903,6 +1238,12 @@ function setupMenuActions() {
         state.filePath = null;
         state.fileName = 'Untitled';
         state.dirty = false;
+        state.fileType = 'markdown';
+        state.opf = null;
+        state.opfSections = [];
+        state.epub = null;
+        state.epubChapter = null;
+        setSurface('markdown');
         replaceDocument(parseMarkdown(''));
         document.title = '0xMD';
         updateStatus();
@@ -989,6 +1330,26 @@ function setupMenuActions() {
   });
 }
 
+function setupFileEvents() {
+  // The watcher in the main process reports every change on disk. A package
+  // and a book are read-only, so they can simply be read again and shown
+  // anew.
+  api.onFileChanged(async ({ path }) => {
+    if (!path || path !== state.filePath) return;
+    if (state.fileType !== 'opf' && state.fileType !== 'epub') return;
+    try {
+      const file = await api.readFile(path);
+      if (state.fileType === 'epub') await openEpubDocument(file);
+      else showOpfDocument(file);
+      refreshOutline();
+      updateStatus();
+      toast('Reloaded');
+    } catch {
+      /* the file is gone */
+    }
+  });
+}
+
 function setupDragAndDrop() {
   const stop = (event) => {
     event.preventDefault();
@@ -1000,8 +1361,8 @@ function setupDragAndDrop() {
     stop(event);
     const file = event.dataTransfer?.files?.[0];
     if (!file) return;
-    if (!/\.(md|markdown|mdown|mkd|mdx|txt)$/i.test(file.name)) {
-      toast('Only Markdown files can be opened.', 'error');
+    if (!/\.(md|markdown|mdown|mkd|mdx|txt|opf|epub)$/i.test(file.name)) {
+      toast('Only Markdown files and EPUB books can be opened.', 'error');
       return;
     }
     // Electron exposes the real path through the webUtils shim in preload;

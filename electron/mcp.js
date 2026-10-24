@@ -18,6 +18,11 @@ import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
+// The EPUB package reader is shared with the renderer — it is plain data in,
+// plain data out, so both processes can use it.
+import { parseOpf, opfToMarkdown, isOpfPath } from '../src/core/opf/opf.js';
+import { isEpubPath, readEpubStructure } from '../src/core/epub/container.js';
+import { ZipArchive } from './zip.js';
 
 const MD_EXTENSIONS = ['.md', '.markdown', '.mdown', '.mkd', '.mdx', '.txt'];
 
@@ -122,14 +127,77 @@ function buildServer({ callRenderer, getContext }) {
   server.registerTool(
     'read_file',
     {
-      title: 'Read a Markdown file from disk',
-      description: 'Reads any Markdown file from disk without opening it in the editor.',
+      title: 'Read a file from disk',
+      description: 'Reads any Markdown file from disk without opening it in the editor. An EPUB package (.opf) comes back as its parsed structure, an EPUB book (.epub) as its table of contents.',
       inputSchema: { path: z.string().describe('Absolute path of the file') },
     },
     async ({ path: filePath }) => {
       try {
         const content = await fs.readFile(filePath, 'utf8');
+        if (isOpfPath(filePath)) {
+          const model = parseOpf(content);
+          return ok({
+            path: filePath,
+            kind: 'epub-package',
+            markdown: opfToMarkdown(model),
+            package: {
+              version: model.version,
+              title: model.metadata.title,
+              language: model.metadata.language,
+              creators: model.metadata.creators.map((person) => person.name),
+              manifest: model.manifest.map((item) => ({
+                id: item.id,
+                href: item.href,
+                mediaType: item.mediaType,
+                properties: item.properties,
+              })),
+              spine: model.spine.items.map((item) => ({ idref: item.idref, href: item.href, linear: item.linear })),
+              guide: model.guide,
+            },
+          });
+        }
+        if (isEpubPath(filePath)) {
+          const archive = new ZipArchive(await fs.readFile(filePath));
+          const structure = readEpubStructure(archive, parseOpf);
+          return ok({
+            path: filePath,
+            kind: 'epub-book',
+            markdown: opfToMarkdown(structure.package),
+            book: {
+              version: structure.package.version,
+              title: structure.package.metadata.title,
+              language: structure.package.metadata.language,
+              creators: structure.package.metadata.creators.map((person) => person.name),
+              chapters: structure.chapters.map((chapter) => ({
+                index: chapter.index,
+                title: chapter.title,
+                href: chapter.href,
+                path: chapter.path,
+              })),
+            },
+          });
+        }
         return ok({ path: filePath, markdown: content });
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    'read_epub_chapter',
+    {
+      title: 'Read a chapter of an EPUB book',
+      description: 'Reads one chapter of an EPUB book and returns it as Markdown. Use `read_file` on the book first to see its chapters.',
+      inputSchema: {
+        path: z.string().describe('Absolute path of the .epub file'),
+        index: z.number().optional().describe('The number of the chapter (default 0)'),
+        href: z.string().optional().describe('The href of the chapter, as listed by read_file'),
+      },
+    },
+    async ({ path: filePath, index = 0, href }) => {
+      try {
+        return ok(await callRenderer('read_epub_chapter', { path: filePath, index, href }));
       } catch (err) {
         return fail(err);
       }
@@ -159,6 +227,10 @@ function buildServer({ callRenderer, getContext }) {
               await walk(node.children);
               continue;
             }
+            // Only the text documents are searched — a package or an image
+            // would only add noise.
+            const extension = node.path.slice(node.path.lastIndexOf('.')).toLowerCase();
+            if (!MD_EXTENSIONS.includes(extension)) continue;
             try {
               const content = await fs.readFile(node.path, 'utf8');
               const lines = content.split(/\r?\n/);

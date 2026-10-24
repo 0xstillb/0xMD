@@ -1,7 +1,7 @@
 {
   "name": "0xmd",
   "productName": "0xMD",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "A Markdown editor where the rendered document is the editor — no licence, no activation.",
   "author": "0xstillb",
   "license": "MIT",
@@ -15,8 +15,8 @@
     "start": "npm run build && electron .",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win portable",
-    "test": "node --test tests/pipeline.test.js",
-    "test:all": "node --test --test-concurrency=1 tests/pipeline.test.js tests/mcp.test.js tests/mcp-config.test.js",
+    "test": "node --test tests/pipeline.test.js tests/opf.test.js tests/zip.test.js",
+    "test:all": "node --test --test-concurrency=1 tests/pipeline.test.js tests/opf.test.js tests/zip.test.js tests/mcp.test.js tests/mcp-config.test.js",
     "smoke": "node scripts/smoke.js"
   },
   "dependencies": {
@@ -81,6 +81,8 @@
     "files": [
       "electron/**/*",
       "dist/**/*",
+      "src/core/opf/**/*",
+      "src/core/epub/**/*",
       "package.json"
     ],
     "publish": [
@@ -110,11 +112,35 @@
     },
     "fileAssociations": [
       {
-        "ext": ["md", "markdown", "mdown", "mkd", "mdx"],
+        "ext": [
+          "md",
+          "markdown",
+          "mdown",
+          "mkd",
+          "mdx"
+        ],
         "name": "Markdown Document",
         "description": "Markdown Document",
         "role": "Editor",
         "mimeType": "text/markdown"
+      },
+      {
+        "ext": [
+          "opf"
+        ],
+        "name": "EPUB Package Document",
+        "description": "EPUB Package Document",
+        "role": "Editor",
+        "mimeType": "application/oebps-package+xml"
+      },
+      {
+        "ext": [
+          "epub"
+        ],
+        "name": "EPUB Book",
+        "description": "EPUB Book",
+        "role": "Editor",
+        "mimeType": "application/epub+zip"
       }
     ],
     "mac": {

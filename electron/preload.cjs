@@ -20,9 +20,12 @@ contextBridge.exposeInMainWorld('api', {
   openFileDialog: () => invoke('dialog:openFile'),
   openFolderDialog: () => invoke('dialog:openFolder'),
   readFile: (filePath) => invoke('file:read', filePath),
+  epubOpen: (filePath) => invoke('epub:open', filePath),
+  epubRead: (filePath, chapterPath) => invoke('epub:read', { filePath, chapterPath }),
   saveFile: (filePath, content) => invoke('file:save', { filePath, content }),
   saveFileDialog: (content, suggestedName) => invoke('dialog:saveFile', { content, suggestedName }),
   revealFile: (filePath) => invoke('file:reveal', filePath),
+  fileExists: (filePath) => invoke('file:exists', filePath),
   folderTree: (root) => invoke('folder:tree', root),
 
   // ---- MCP --------------------------------------------------------------

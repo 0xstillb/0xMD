@@ -1,0 +1,435 @@
+/* 0xMD — the EPUB package viewer.
+ *
+ * A .opf file is not a document, so it gets its own surface: the metadata
+ * of the book, the files it contains and the order they are read in.
+ * Everything reads from the theme variables, so the viewer follows the
+ * active theme like the rest of the app.
+ */
+
+.opf-host {
+  display: none;
+}
+
+/* While a package is open the markdown surface steps aside. */
+.editor-host.is-opf .md-editor {
+  display: none;
+}
+
+.editor-host.is-opf .opf-host {
+  display: block;
+}
+
+.opf-view {
+  max-width: var(--content-width, 860px);
+  margin: 0 auto;
+  padding: 30px;
+  padding-bottom: 100px;
+  font-family: var(--font-body);
+  font-size: calc(var(--fs-base, 16px) * var(--fs-scale, 1));
+  line-height: calc(var(--lh-base, 1.6) * var(--lh-scale, 1));
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------- *
+ * Header
+ * ---------------------------------------------------------------- */
+
+.opf-head {
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.opf-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.opf-kicker-version {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--accent);
+}
+
+.opf-title {
+  margin: 0 0 6px;
+  font-family: var(--font-heading);
+  font-size: var(--h1-size, 2.25em);
+  font-weight: var(--heading-weight, bold);
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.opf-subtitle {
+  margin-bottom: 8px;
+  font-size: 1.1em;
+  color: var(--muted);
+}
+
+.opf-byline {
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+
+.opf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.opf-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.75em;
+  color: var(--muted);
+  background: var(--bg-soft);
+}
+
+.opf-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.opf-button {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.opf-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- *
+ * Sections
+ * ---------------------------------------------------------------- */
+
+.opf-section {
+  margin-bottom: 32px;
+}
+
+.opf-section-title {
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-soft);
+  font-family: var(--font-heading);
+  font-size: 1.25em;
+  font-weight: var(--heading-weight, bold);
+  color: var(--text);
+}
+
+.opf-section-count {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  font-size: 0.72em;
+  font-weight: normal;
+  color: var(--muted);
+}
+
+.opf-empty {
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+/* ---------------------------------------------------------------- *
+ * Metadata
+ * ---------------------------------------------------------------- */
+
+.opf-metadata {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) 1fr;
+  gap: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.opf-meta-row {
+  display: contents;
+}
+
+.opf-meta-label,
+.opf-meta-value {
+  margin: 0;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.9em;
+}
+
+.opf-meta-label {
+  background: var(--bg-soft);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.opf-meta-value {
+  overflow-wrap: anywhere;
+}
+
+.opf-meta-row:last-child .opf-meta-label,
+.opf-meta-row:last-child .opf-meta-value {
+  border-bottom: none;
+}
+
+.opf-meta-empty {
+  grid-column: 1 / -1;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.opf-meta-extra {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.opf-meta-extra-item {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 3px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  background: var(--bg-soft);
+  font-size: 0.78em;
+}
+
+.opf-meta-extra-key {
+  color: var(--muted);
+}
+
+.opf-meta-extra-value {
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------- *
+ * Tables
+ * ---------------------------------------------------------------- */
+
+.opf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+}
+
+.opf-table th,
+.opf-table td {
+  border: 1px solid var(--table-border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.opf-table th {
+  background: var(--code-header-bg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.opf-table tbody tr:nth-child(2n) {
+  background: var(--table-stripe);
+}
+
+.opf-cell-id {
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, monospace);
+  font-size: 0.9em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.opf-cell-type,
+.opf-cell-props {
+  font-size: 0.92em;
+  color: var(--muted);
+}
+
+.opf-cell-props {
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, monospace);
+}
+
+.opf-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--link);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.opf-link:hover {
+  text-decoration: underline;
+}
+
+.opf-link-inline {
+  margin-left: 8px;
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.opf-file {
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------- *
+ * The bar above a chapter of a book
+ * ---------------------------------------------------------------- */
+
+.epub-banner {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: var(--content-width, 860px);
+  margin: 0 auto;
+  padding: 8px 30px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg);
+  font-size: 0.85em;
+}
+
+@media only screen and (min-width: 1400px) {
+  .epub-banner {
+    max-width: calc(var(--content-width, 860px) * 1.19);
+  }
+}
+
+@media only screen and (min-width: 1800px) {
+  .epub-banner {
+    max-width: calc(var(--content-width, 860px) * 1.4);
+  }
+}
+
+.epub-back {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.95em;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.epub-back:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.epub-banner-title {
+  font-weight: 600;
+}
+
+.epub-banner-source {
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- *
+ * Reading order
+ * ---------------------------------------------------------------- */
+
+.opf-spine {
+  margin: 0;
+  padding-left: 26px;
+}
+
+.opf-spine-item {
+  margin-bottom: 8px;
+  padding: 6px 0;
+}
+
+.opf-spine-main {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.opf-spine-title {
+  font-weight: 600;
+}
+
+.opf-spine-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.opf-tag {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: 0.72em;
+  color: var(--muted);
+  background: var(--bg-soft);
+}
+
+.opf-tag-warn {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- *
+ * Raw XML and errors
+ * ---------------------------------------------------------------- */
+
+.opf-raw {
+  max-height: 60vh;
+  margin: 12px 0 0;
+  padding: 14px;
+  border: 1px solid var(--code-border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  font-family: var(--font-mono, 'SFMono-Regular', Consolas, monospace);
+  font-size: 0.8em;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: auto;
+}
+
+.opf-error {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg-soft);
+}
+
+.opf-error-title {
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.opf-error-text {
+  margin: 0;
+  color: var(--muted);
+}

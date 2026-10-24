@@ -17,6 +17,8 @@ diagram **in place**. There is no preview pane — the document you are editing
 | **Live maths** | `$x$` inline and `$$x$$` block, rendered with KaTeX, click to edit the source. |
 | **Diagrams** | Mermaid, loaded lazily — only when a document actually contains one. |
 | **Outline & file tree** | Sidebar with headings, a folder tree, a folder-wide search and a file preview on hover. |
+| **EPUB packages** | `.opf` files open as a readable index: metadata, manifest, reading order. |
+| **EPUB books** | `.epub` files open as the index of the book — and its chapters, read as Markdown. |
 | **Find & replace, quick open** | `Ctrl+F` and `Ctrl+P`. |
 | **Themes** | GitHub, Newsprint, Night, Pixyll. |
 | **Export** | Standalone HTML (syntax highlighted) and PDF. |
@@ -27,6 +29,9 @@ diagram **in place**. There is no preview pane — the document you are editing
 | | |
 |---|---|
 | ![The editor](demo/0xmd-full.png) | The whole surface: maths, a diagram, code, tables, callouts, footnotes. |
+| ![EPUB package](demo/0xmd-opf.png) | An `.opf` package opened as a readable index. |
+| ![EPUB book](demo/0xmd-epub.png) | An `.epub` book: its metadata, its files and its reading order. |
+| ![EPUB chapter](demo/0xmd-epub-chapter.png) | A chapter of the book, read as Markdown in the editor. |
 | ![About](demo/0xmd-about.png) | The about dialog. |
 | ![Preferences](demo/0xmd-preferences.png) | Preferences, including the MCP section. |
 | ![Night theme](demo/theme-night.png) | The Night theme. |
@@ -71,6 +76,54 @@ gh workflow run release.yml --ref main -f publish=false
 > A `.dmg` has to be assembled with Apple's own tooling, so the macOS
 > build always runs on a `macos-latest` runner — it cannot be produced
 > from Windows or Linux.
+
+## EPUB package documents
+
+An `.opf` file is the index of an EPUB: the metadata of the book, the files
+it contains (the *manifest*) and the order they are read in (the *spine*).
+
+0xMD opens one as a **read-only** surface of its own — the metadata as a
+table, the manifest as a table, the reading order as a list. Clicking a file
+shows it in the file manager of the system, next to the package.
+
+* the **View XML** button shows the raw source of the package;
+* **Save as Markdown…** writes a summary of what was found;
+* **File → Export as HTML/PDF** exports the same summary;
+* the outline in the sidebar lists the sections of the package, and clicking
+  one jumps to it.
+
+The package itself is never written to — it stays exactly as it is on disk.
+Both EPUB 2 and EPUB 3 are understood.
+
+> An `.opf` file is usually inside an unpacked EPUB. 0xMD reads the package
+> only; the chapters it points at are XHTML and stay untouched.
+
+> `demo/package.opf` is a small package to try it with — open it and the
+> viewer shows everything it found.
+
+## EPUB books
+
+An `.epub` file is a ZIP archive: the package, the chapters and the images.
+0xMD opens one in two steps:
+
+1. **the index of the book** — the same surface as a `.opf` file, with the
+   reading order of the book in it;
+2. **the chapters** — click one and it is read as Markdown, in the editor
+   itself: the headings, paragraphs, lists, quotes, tables, code and links
+   of the chapter become a normal document.
+
+A bar above the chapter says where it came from, and its **←** button takes
+you back to the index of the book.
+
+The book is never written to. A chapter can be edited, and **Ctrl+S** then
+saves it as a Markdown file of its own — the archive stays untouched.
+
+> The stylesheet of the book is left behind: the theme of 0xMD owns the
+> page, so every book looks the same. Images are kept as references —
+> they live inside the archive, so they are shown by name.
+
+> `demo/book.epub` is a small book to try it with — open it and read a
+> chapter.
 
 ## Opening .md files from Explorer
 
@@ -133,6 +186,8 @@ npm run dist     # → release/0xMD-1.0.0-portable.exe
 
 ```bash
 0xMD.exe notes.md                 # open a document
+0xMD.exe book.opf                 # open an EPUB package document
+0xMD.exe book.epub                # open an EPUB book
 0xMD.exe ./notes                  # open a folder in the sidebar
 0xMD.exe ./notes notes/todo.md    # both
 ```
@@ -142,6 +197,12 @@ npm run dist     # → release/0xMD-1.0.0-portable.exe
 `demo/Welcome.md` exercises every feature at once — headings, every inline
 mark, maths, a Mermaid diagram, a syntax-highlighted code block, a table,
 task lists, callouts and footnotes. Open it to see the whole surface.
+
+`demo/package.opf` is a small EPUB package — the metadata, three chapters
+and a cover — for trying the package viewer.
+
+`demo/book.epub` is the same book as a real EPUB, for trying the reader. It
+is built from the files in `demo/` by `node tools/make-demo-epub.js`.
 
 Screenshots in `demo/` were captured with the helper scripts in `tools/`
 (`capture.ps1`, `interact.ps1`), which drive the real window and grab the
@@ -177,9 +238,10 @@ copied to the clipboard. The status bar always shows the current state.
 
 | Tool | What it does |
 |---|---|
-| `open_document` | Open a `.md` file in the editor |
+| `open_document` | Open a `.md` file in the editor, an `.opf` package or an `.epub` book |
 | `read_document` | Read the markdown source of the open document |
-| `read_file` | Read any markdown file from disk without opening it |
+| `read_file` | Read any markdown file from disk without opening it — an `.opf` comes back as its structure, an `.epub` as its table of contents |
+| `read_epub_chapter` | Read one chapter of an `.epub` book, as Markdown |
 | `get_outline` | Heading tree of the open document |
 | `list_documents` | Every markdown file in the opened folder |
 | `search_documents` | Grep the opened folder |
@@ -215,6 +277,7 @@ electron/
   main.js            main process — windows, menus, IPC, file system, MCP lifecycle
   preload.cjs        contextBridge surface (contextIsolation + sandbox ON)
   mcp.js             MCP server (Streamable HTTP, loopback only)
+  zip.js             a small ZIP reader, for EPUB books
   watcher.js         chokidar file watcher
   smoke.js           headless self-test script
 
@@ -227,11 +290,15 @@ src/
     editor.js        ProseMirror view + plugin stack
     nodeviews/       KaTeX, Mermaid, CodeMirror, footnotes, raw HTML, task checkbox
     plugins/         hidden markers, keymap, input rules, live styles, placeholder
-  ui/                outline, file tree, find, quick open, settings
-  styles/            base, editor, sidebar, and four themes
+    opf/             XML reader + EPUB package reader (shared with the main process)
+    epub/            the inside of a book: container, paths, XHTML → Markdown
+  ui/                outline, file tree, find, quick open, settings, package viewer
+  styles/            base, editor, sidebar, package viewer, and four themes
 
 tests/
   pipeline.test.js   markdown round-trip guarantees (17 assertions)
+  opf.test.js        the XML reader and the EPUB package reader
+  zip.test.js        the ZIP reader and the inside of a book
   mcp.test.js        end-to-end MCP client against the running app
   mcp-config.test.js the MCP server can be reconfigured at runtime
 ```

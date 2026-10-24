@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 900" width="600" height="900" role="img" aria-label="The lighthouse at night">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0b1a2b"/>
+      <stop offset="100%" stop-color="#1d3557"/>
+    </linearGradient>
+    <radialGradient id="beam" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#ffe8a3" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#ffe8a3" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="600" height="900" fill="url(#sky)"/>
+  <circle cx="470" cy="150" r="42" fill="#f4f1de" opacity="0.9"/>
+  <circle cx="300" cy="330" r="260" fill="url(#beam)" opacity="0.35"/>
+
+  <g fill="#0f2233">
+    <path d="M255 330 L345 330 L372 830 L228 830 Z"/>
+    <rect x="248" y="286" width="104" height="44" rx="6"/>
+    <rect x="236" y="250" width="128" height="38" rx="6"/>
+  </g>
+
+  <g fill="#ffd166">
+    <rect x="292" y="296" width="16" height="24"/>
+    <rect x="292" y="460" width="16" height="24"/>
+    <rect x="292" y="620" width="16" height="24"/>
+  </g>
+
+  <g fill="#0f2233">
+    <path d="M270 250 L330 250 L312 196 L288 196 Z"/>
+    <rect x="284" y="160" width="32" height="38" rx="4"/>
+  </g>
+
+  <g fill="#e0fbfc" opacity="0.75">
+    <circle cx="120" cy="220" r="3"/>
+    <circle cx="210" cy="150" r="2"/>
+    <circle cx="520" cy="300" r="3"/>
+    <circle cx="80" cy="420" r="2"/>
+    <circle cx="400" cy="90" r="2"/>
+    <circle cx="560" cy="480" r="2"/>
+  </g>
+
+  <rect y="820" width="600" height="80" fill="#08131f"/>
+</svg>

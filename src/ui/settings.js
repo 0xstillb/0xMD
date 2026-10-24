@@ -160,7 +160,7 @@ export function openSettings({ modal, body, settings, onSave, onClose, onAssocCh
   assocButton.type = 'button';
   assocButton.className = 'settings-link-button';
   assocButton.id = 'file-assoc-button';
-  assocButton.textContent = 'Register 0xMD for .md files';
+  assocButton.textContent = 'Register 0xMD for .md and .opf files';
   assocButton.addEventListener('click', async () => {
     assocButton.disabled = true;
     assocButton.textContent = 'Working…';

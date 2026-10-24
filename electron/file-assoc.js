@@ -18,7 +18,8 @@ import { app } from 'electron';
 const run = promisify(execFile);
 
 const PROG_ID = '0xMD.Markdown';
-const EXTENSIONS = ['.md', '.markdown', '.mdown', '.mkd', '.mdx', '.txt'];
+const EXTENSIONS = ['.md', '.markdown', '.mdown', '.mkd', '.mdx', '.txt', '.opf', '.epub'];
+const FRIENDLY_NAME = 'Markdown / EPUB Document (0xMD)';
 
 /**
  * The file Windows should launch.
@@ -65,7 +66,7 @@ export async function registerFileAssociations() {
   const command = `${quote(exe)} "%1"`;
 
   const steps = [
-    ['add', prog, '/v', '', '/t', 'REG_SZ', '/d', 'Markdown Document (0xMD)', '/f'],
+    ['add', prog, '/v', '', '/t', 'REG_SZ', '/d', FRIENDLY_NAME, '/f'],
     ['add', `${prog}\\DefaultIcon`, '/v', '', '/t', 'REG_SZ', '/d', `${exe},0`, '/f'],
     ['add', `${prog}\\shell\\open\\command`, '/v', '', '/t', 'REG_SZ', '/d', command, '/f'],
   ];
@@ -79,7 +80,7 @@ export async function registerFileAssociations() {
 
   // The application entry, so Windows can find the icon and the command.
   const app = `HKCU\\Software\\Classes\\Applications\\${path.basename(exe)}`;
-  steps.push(['add', app, '/v', '', '/t', 'REG_SZ', '/d', 'Markdown Document (0xMD)', '/f']);
+  steps.push(['add', app, '/v', '', '/t', 'REG_SZ', '/d', FRIENDLY_NAME, '/f']);
   steps.push(['add', `${app}\\shell\\open\\command`, '/v', '', '/t', 'REG_SZ', '/d', command, '/f']);
   for (const ext of EXTENSIONS) {
     steps.push(['add', `${app}\\SupportedTypes`, '/v', ext, '/t', 'REG_NONE', '/f']);

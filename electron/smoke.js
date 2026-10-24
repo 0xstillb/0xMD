@@ -133,6 +133,121 @@ export const SMOKE_SCRIPT = `(async () => {
   await new Promise((resolve) => setTimeout(resolve, 150));
   check('about closes', about.hidden);
 
+  // ---- the EPUB package viewer ------------------------------------------
+  const opfSource = '<?xml version="1.0" encoding="UTF-8"?>'
+    + '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="pub-id">'
+    + '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+    + '<dc:identifier id="pub-id">urn:uuid:smoke</dc:identifier>'
+    + '<dc:title>Smoke Book</dc:title>'
+    + '<dc:creator id="c1">Ada Lovelace</dc:creator>'
+    + '<meta refines="#c1" property="role">aut</meta>'
+    + '<dc:language>en</dc:language>'
+    + '<meta name="cover" content="cover-image"/>'
+    + '</metadata>'
+    + '<manifest>'
+    + '<item id="cover-image" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>'
+    + '<item id="ch1" href="text/chapter-01.xhtml" media-type="application/xhtml+xml"/>'
+    + '</manifest>'
+    + '<spine><itemref idref="ch1"/></spine>'
+    + '</package>';
+
+  const model = api.parseOpf(opfSource);
+  check('package parsed', !!model);
+  check('package title read', model && model.metadata.title === 'Smoke Book');
+  check('package author read', model && model.metadata.creators[0].name === 'Ada Lovelace');
+  check('package author role read', model && model.metadata.creators[0].role === 'aut');
+  check('package cover found', model && model.metadata.cover && model.metadata.cover.href === 'images/cover.jpg');
+  check('package manifest read', model && model.manifest.length === 2);
+  check('package spine read', model && model.spine.items.length === 1 && model.spine.items[0].href === 'text/chapter-01.xhtml');
+
+  const opfHost = document.createElement('div');
+  opfHost.className = 'opf-host';
+  document.getElementById('editor-host').append(opfHost);
+  const rendered = api.renderOpf(opfHost, { model, raw: opfSource });
+  check('package viewer renders the title', (opfHost.querySelector('.opf-title')?.textContent || '').indexOf('Smoke Book') >= 0);
+  check('package viewer lists the metadata', opfHost.querySelectorAll('.opf-meta-row').length >= 4);
+  check('package viewer lists the manifest', opfHost.querySelectorAll('.opf-table tbody tr').length === 2);
+  check('package viewer lists the reading order', opfHost.querySelectorAll('.opf-spine-item').length === 1);
+  check('package viewer has sections', rendered.sections.length === 3);
+  check('package summary is markdown', api.opfToMarkdown(model).indexOf('# Smoke Book') === 0);
+  opfHost.remove();
+
+  // ---- opening a package from disk --------------------------------------
+  const info = await window.api.info();
+  const separator = info.platform === 'win32' ? '\\\\' : '/';
+  const opfPath = info.tempDir + separator + '0xmd-smoke.opf';
+  await window.api.saveFile(opfPath, opfSource);
+  await api.openDocument(opfPath);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  const editorHost = document.getElementById('editor-host');
+  check('opening a package shows the package surface', !!editorHost.querySelector('.opf-view'));
+  check('opening a package hides the editor', editorHost.classList.contains('is-opf'));
+  check('opening a package shows the title', (editorHost.querySelector('.opf-title')?.textContent || '').indexOf('Smoke Book') >= 0);
+  check('opening a package fills the status bar', (document.getElementById('status-words').textContent || '').indexOf('EPUB') >= 0);
+  check('opening a package fills the outline', api.state.outline.length === 3);
+  check('opening a package is read-only', api.state.fileType === 'opf');
+
+  // ---- and back to a Markdown document ----------------------------------
+  const mdPath = info.tempDir + separator + '0xmd-smoke.md';
+  await window.api.saveFile(mdPath, '# Smoke Doc\\n\\nHello.');
+  await api.openDocument(mdPath);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  check('a Markdown file brings the editor back', !editorHost.classList.contains('is-opf'));
+  check('a Markdown file removes the package surface', !editorHost.querySelector('.opf-view'));
+  check('a Markdown file is editable again', api.state.fileType === 'markdown');
+
+  // ---- an EPUB book ------------------------------------------------------
+  const bookPath = info.appRoot + separator + 'demo' + separator + 'book.epub';
+  let bookThere = true;
+  try {
+    await window.api.readFile(bookPath);
+  } catch {
+    bookThere = false;
+  }
+
+  if (bookThere) {
+    await api.openDocument(bookPath);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+
+    check('opening a book shows the package surface', !!editorHost.querySelector('.opf-view'));
+    check('opening a book shows the title', (editorHost.querySelector('.opf-title')?.textContent || '').indexOf('Lighthouse') >= 0);
+    check('opening a book lists the chapters', editorHost.querySelectorAll('.opf-spine-item').length === 4);
+    check('opening a book fills the status bar', (document.getElementById('status-words').textContent || '').indexOf('EPUB') >= 0);
+    check('opening a book is read-only', api.state.fileType === 'epub');
+
+    // A chapter is opened from the reading order. The first entry is the
+    // table of contents, the second one is a chapter of the book.
+    const chapterLinks = editorHost.querySelectorAll('.opf-spine-item .opf-link-inline');
+    check('the reading order offers a chapter', chapterLinks.length >= 2);
+    const chapterButton = chapterLinks[1];
+    if (chapterButton) {
+      chapterButton.click();
+      await new Promise((resolve) => setTimeout(resolve, 700));
+
+      check('a chapter brings the editor back', !editorHost.classList.contains('is-opf'));
+      check('a chapter shows a banner', !!editorHost.querySelector('.epub-banner'));
+      check('a chapter is a document', api.state.fileType === 'epub-chapter');
+
+      const text = api.currentMarkdown();
+      check('a chapter has text', text.length > 40, 'length=' + text.length);
+      check('a chapter has a heading', /(^|\\n)#{1,3} /.test(text), text.slice(0, 80));
+      check('a chapter keeps its words', text.indexOf('ninety-one steps') >= 0, text.slice(0, 120));
+      check('a chapter keeps its emphasis', text.indexOf('*never once*') >= 0, text.slice(0, 200));
+      check('a chapter is in the outline', api.state.outline.length >= 1);
+
+      // Back to the book.
+      editorHost.querySelector('.epub-back')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      check('the back button returns to the book', api.state.fileType === 'epub' && !!editorHost.querySelector('.opf-view'));
+    }
+  }
+
+  // ---- and back to a Markdown document, once more ------------------------
+  await api.openDocument(mdPath);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  check('the editor comes back after a book', api.state.fileType === 'markdown');
+
   // ---- the MCP server can be switched off and on -------------------------
   const switchedOff = await api.configureMcp({ enabled: false });
   check('mcp can be switched off', switchedOff && switchedOff.running === false, JSON.stringify(switchedOff));

@@ -13,6 +13,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import iconv from 'iconv-lite';
 import { SMOKE_SCRIPT } from './smoke.js';
+import { ZipArchive } from './zip.js';
+// The package reader is shared with the renderer: an EPUB holds the same
+// kind of package document 0xMD already reads as a .opf file.
+import { parseOpf } from '../src/core/opf/opf.js';
+import { readEpubStructure } from '../src/core/epub/container.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -21,6 +26,11 @@ const DEV_SERVER = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 const IS_DEV = !!process.env.VITE_DEV_SERVER_URL;
 
 const MD_EXTENSIONS = ['.md', '.markdown', '.mdown', '.mkd', '.mdx', '.mkdn', '.txt'];
+// An EPUB package document is not a document, but it is worth opening.
+const OPF_EXTENSIONS = ['.opf'];
+// A book, and the chapters inside it.
+const EPUB_EXTENSIONS = ['.epub'];
+const DOCUMENT_EXTENSIONS = [...MD_EXTENSIONS, ...OPF_EXTENSIONS, ...EPUB_EXTENSIONS];
 const MAX_FILE_BYTES = 64 * 1024 * 1024; // refuse "oversize" files
 
 let mainWindow = null;
@@ -164,7 +174,7 @@ function decodeBuffer(buf) {
   }
 }
 
-async function readMarkdownFile(filePath) {
+async function readTextFile(filePath) {
   const stat = await fs.stat(filePath);
   if (stat.size > MAX_FILE_BYTES) {
     throw new Error(`File is too large to render (${(stat.size / 1048576).toFixed(1)} MB).`);
@@ -219,7 +229,7 @@ async function buildFolderTree(root, depth = 0) {
     if (entry.isDirectory()) {
       const children = await buildFolderTree(full, depth + 1);
       if (children.length) nodes.push({ type: 'dir', name: entry.name, path: full, children });
-    } else if (MD_EXTENSIONS.includes(path.extname(entry.name).toLowerCase())) {
+    } else if (DOCUMENT_EXTENSIONS.includes(path.extname(entry.name).toLowerCase())) {
       const stat = await fs.stat(full);
       nodes.push({ type: 'file', name: entry.name, path: full, mtime: stat.mtimeMs, size: stat.size });
     }
@@ -248,18 +258,63 @@ async function initWatcher() {
 function markdownFileFromArgv(argv) {
   return argv
     .slice(1)
-    .find((arg) => !arg.startsWith('-') && arg !== '.' && /\.(md|markdown|mdown|mkd|mdx|txt)$/i.test(arg));
+    .find((arg) => !arg.startsWith('-') && arg !== '.' && /\.(md|markdown|mdown|mkd|mdx|txt|opf|epub)$/i.test(arg));
 }
 
 function folderFromArgv(argv) {
   return argv
     .slice(1)
-    .find((arg) => !arg.startsWith('-') && arg !== '.' && !/\.(md|markdown|mdown|mkd|mdx|txt)$/i.test(arg) && existsSync(arg));
+    .find((arg) => !arg.startsWith('-') && arg !== '.' && !/\.(md|markdown|mdown|mkd|mdx|txt|opf|epub)$/i.test(arg) && existsSync(arg));
 }
 
 // Resolved at import time so the renderer never races the main process.
 startupFile = markdownFileFromArgv(process.argv);
 startupFolder = folderFromArgv(process.argv);
+
+/* ------------------------------------------------------------------ *
+ * EPUB — a ZIP archive with a package and the documents of a book.
+ * ------------------------------------------------------------------ */
+
+// The last few archives stay open, so a chapter can be read without
+// unzipping the book again.
+const epubArchives = new Map();
+const EPUB_CACHE_SIZE = 3;
+
+async function archiveFor(filePath) {
+  const cached = epubArchives.get(filePath);
+  if (cached) return cached;
+
+  const stat = await fs.stat(filePath);
+  if (stat.size > MAX_FILE_BYTES) {
+    throw new Error(`This book is too large to open (${(stat.size / 1048576).toFixed(1)} MB).`);
+  }
+
+  const archive = new ZipArchive(await fs.readFile(filePath));
+  epubArchives.set(filePath, archive);
+  while (epubArchives.size > EPUB_CACHE_SIZE) {
+    epubArchives.delete(epubArchives.keys().next().value);
+  }
+  return archive;
+}
+
+/** Read the package of an EPUB and the list of its chapters. */
+async function openEpub(filePath) {
+  const archive = await archiveFor(filePath);
+  const structure = readEpubStructure(archive, parseOpf);
+  return {
+    path: filePath,
+    name: path.basename(filePath),
+    ...structure,
+  };
+}
+
+/** Read one chapter of an EPUB. */
+async function readEpubChapter(filePath, chapterPath) {
+  const archive = await archiveFor(filePath);
+  const html = archive.readText(chapterPath);
+  if (html == null) throw new Error(`The chapter "${chapterPath}" is not in this book.`);
+  return { path: chapterPath, html };
+}
 
 /* ------------------------------------------------------------------ *
  * Window
@@ -371,7 +426,7 @@ async function registerFileAssocFromMenu() {
     type: result.ok ? 'info' : 'warning',
     message: result.ok ? '0xMD is now registered for Markdown files.' : 'Could not register the file association.',
     detail: result.ok
-      ? 'Right-click a .md file in Explorer and pick 0xMD from "Open with".'
+      ? 'Right-click a .md or .opf file in Explorer and pick 0xMD from "Open with".'
       : result.error || 'Unknown error',
     buttons: ['OK'],
   });
@@ -668,6 +723,9 @@ function registerIpc() {
       electron: process.versions.electron,
       chrome: process.versions.chrome,
       node: process.versions.node,
+      // Handy for the smoke test, which writes a file and opens it.
+      tempDir: app.getPath('temp'),
+      appRoot: app.getAppPath(),
       settings: s,
     };
   });
@@ -683,16 +741,18 @@ function registerIpc() {
 
   ipcMain.handle('dialog:openFile', async () => {
     const res = await dialog.showOpenDialog(mainWindow, {
-      title: 'Open Markdown File',
+      title: 'Open File',
       properties: ['openFile'],
       filters: [
         { name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd', 'mdx', 'mkdn'] },
+        { name: 'EPUB Book', extensions: ['epub'] },
+        { name: 'EPUB Package', extensions: ['opf'] },
         { name: 'Text', extensions: ['txt'] },
         { name: 'All Files', extensions: ['*'] },
       ],
     });
     if (res.canceled || !res.filePaths[0]) return null;
-    return readMarkdownFile(res.filePaths[0]);
+    return readTextFile(res.filePaths[0]);
   });
 
   ipcMain.handle('dialog:openFolder', async () => {
@@ -707,9 +767,19 @@ function registerIpc() {
     return { root, tree };
   });
 
-  ipcMain.handle('file:read', async (_e, filePath) => readMarkdownFile(filePath));
+  ipcMain.handle('file:read', async (_e, filePath) => readTextFile(filePath));
+  ipcMain.handle('epub:open', async (_e, filePath) => openEpub(filePath));
+  ipcMain.handle('epub:read', async (_e, { filePath, chapterPath }) => readEpubChapter(filePath, chapterPath));
   ipcMain.handle('file:save', async (_e, { filePath, content }) => writeMarkdownFile(filePath, content));
   ipcMain.handle('file:reveal', async (_e, filePath) => { shell.showItemInFolder(filePath); });
+  ipcMain.handle('file:exists', async (_e, filePath) => {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 
   ipcMain.handle('dialog:saveFile', async (_e, { content, suggestedName }) => {
     const res = await dialog.showSaveDialog(mainWindow, {

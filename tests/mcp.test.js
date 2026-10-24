@@ -8,11 +8,13 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { setTimeout as sleep } from 'node:timers/promises';
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { createZip } from '../tools/zip-writer.js';
 
 const require = createRequire(import.meta.url);
 const electronPath = require('electron');
@@ -120,4 +122,86 @@ test('MCP server exposes the 0xMD tools and can edit the document', async (t) =>
   const resource = await client.readResource({ uri: 'oxmd://document/current' });
   assert.ok(resource.contents[0].text.includes('MCP was here.'));
   assert.equal(resource.contents[0].mimeType, 'text/markdown');
+
+  // ---- an EPUB package is read as a structure ---------------------------
+  const opfPath = path.join(os.tmpdir(), '0xmd-test-package.opf');
+  await fs.writeFile(
+    opfPath,
+    [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="pub-id">',
+      '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">',
+      '    <dc:identifier id="pub-id">urn:uuid:mcp</dc:identifier>',
+      '    <dc:title>MCP Book</dc:title>',
+      '    <dc:creator>Ada Lovelace</dc:creator>',
+      '    <dc:language>en</dc:language>',
+      '  </metadata>',
+      '  <manifest>',
+      '    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>',
+      '    <item id="ch2" href="ch2.xhtml" media-type="application/xhtml+xml"/>',
+      '  </manifest>',
+      '  <spine><itemref idref="ch1"/><itemref idref="ch2"/></spine>',
+      '</package>',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const packageResult = await client.callTool({ name: 'read_file', arguments: { path: opfPath } });
+  const packageData = JSON.parse(packageResult.content[0].text);
+  assert.equal(packageData.kind, 'epub-package');
+  assert.equal(packageData.package.title, 'MCP Book');
+  assert.equal(packageData.package.manifest.length, 2);
+  assert.equal(packageData.package.spine.length, 2);
+  assert.ok(packageData.markdown.includes('# MCP Book'));
+
+  // ---- a Markdown file is still read as Markdown ------------------------
+  const mdPath = path.join(os.tmpdir(), '0xmd-test-note.md');
+  await fs.writeFile(mdPath, '# A note\n', 'utf8');
+  const mdResult = await client.callTool({ name: 'read_file', arguments: { path: mdPath } });
+  assert.equal(JSON.parse(mdResult.content[0].text).markdown, '# A note\n');
+
+  // ---- an EPUB book is read as a book ----------------------------------
+  const bookPath = path.join(os.tmpdir(), '0xmd-test-book.epub');
+  await fs.writeFile(bookPath, createZip([
+    { name: 'mimetype', content: 'application/epub+zip', compress: false },
+    {
+      name: 'META-INF/container.xml',
+      content: '<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">'
+        + '<rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+    },
+    {
+      name: 'content.opf',
+      content: '<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">'
+        + '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        + '<dc:identifier id="id">urn:uuid:mcp</dc:identifier><dc:title>MCP Book</dc:title>'
+        + '<dc:language>en</dc:language></metadata>'
+        + '<manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>'
+        + '<item id="c2" href="c2.xhtml" media-type="application/xhtml+xml"/></manifest>'
+        + '<spine><itemref idref="c1"/><itemref idref="c2"/></spine></package>',
+    },
+    {
+      name: 'c1.xhtml',
+      content: '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>One</title></head>'
+        + '<body><h1>Chapter One</h1><p>It was a <em>quiet</em> morning.</p></body></html>',
+    },
+    {
+      name: 'c2.xhtml',
+      content: '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Two</title></head>'
+        + '<body><h1>Chapter Two</h1><p>The glass fell half a degree.</p></body></html>',
+    },
+  ]), 'utf8');
+
+  const bookResult = await client.callTool({ name: 'read_file', arguments: { path: bookPath } });
+  const bookData = JSON.parse(bookResult.content[0].text);
+  assert.equal(bookData.kind, 'epub-book');
+  assert.equal(bookData.book.title, 'MCP Book');
+  assert.equal(bookData.book.chapters.length, 2);
+
+  const chapterResult = await client.callTool({ name: 'read_epub_chapter', arguments: { path: bookPath, index: 1 } });
+  const chapterData = JSON.parse(chapterResult.content[0].text);
+  assert.ok(chapterData.markdown.includes('# Chapter Two'), chapterData.markdown);
+  assert.ok(chapterData.markdown.includes('half a degree'), chapterData.markdown);
+
+  const firstChapter = await client.callTool({ name: 'read_epub_chapter', arguments: { path: bookPath, href: 'c1.xhtml' } });
+  assert.ok(JSON.parse(firstChapter.content[0].text).markdown.includes('*quiet*'));
 });
