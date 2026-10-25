@@ -3,29 +3,43 @@
 // KaTeX renders to HTML + CSS rather than a large SVG blob, and it is
 // far lighter than a full typesetting engine.
 
-import katex from 'katex';
+import { loadKatex } from '../renderers.js';
 
 function renderKatex(target, latex, displayMode) {
-  try {
-    katex.render(latex, target, {
-      displayMode,
-      throwOnError: false,
-      strict: false,
-      trust: false,
-      output: 'html',
-      macros: {
-        '\\RR': '\\mathbb{R}',
-        '\\NN': '\\mathbb{N}',
-        '\\ZZ': '\\mathbb{Z}',
-        '\\QQ': '\\mathbb{Q}',
-        '\\CC': '\\mathbb{C}',
-      },
+  // The source is shown first; KaTeX arrives a moment later and takes over.
+  target.textContent = displayMode ? `$$${latex}$$` : `$${latex}$`;
+
+  const token = String(Number(target.dataset.katexToken || 0) + 1);
+  target.dataset.katexToken = token;
+
+  loadKatex()
+    .then((katex) => {
+      // A newer formula may have won the race, or the block may be gone.
+      if (!target.isConnected || target.dataset.katexToken !== token) return;
+      try {
+        katex.render(latex, target, {
+          displayMode,
+          throwOnError: false,
+          strict: false,
+          trust: false,
+          output: 'html',
+          macros: {
+            '\\RR': '\\mathbb{R}',
+            '\\NN': '\\mathbb{N}',
+            '\\ZZ': '\\mathbb{Z}',
+            '\\QQ': '\\mathbb{Q}',
+            '\\CC': '\\mathbb{C}',
+          },
+        });
+      } catch (err) {
+        target.classList.add('md-math-error');
+        target.textContent = latex;
+        target.title = String(err?.message || err);
+      }
+    })
+    .catch(() => {
+      /* KaTeX could not be loaded — the source stays visible */
     });
-  } catch (err) {
-    target.classList.add('md-math-error');
-    target.textContent = latex;
-    target.title = String(err?.message || err);
-  }
 }
 
 /* ------------------------------------------------------------------ *

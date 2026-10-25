@@ -11,6 +11,18 @@ export const SMOKE_SCRIPT = `(async () => {
     else errors.push(name + (detail ? ' :: ' + detail : ''));
   };
 
+  // Some parts of the app arrive late — the maths engine and the syntax
+  // modes are fetched when they are first needed — so the test waits for
+  // them instead of hoping.
+  const waitFor = async (probe, timeout = 8000) => {
+    const started = Date.now();
+    while (Date.now() - started < timeout) {
+      if (await probe()) return true;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return false;
+  };
+
   try {
   const ready = await new Promise((resolve) => {
     const started = Date.now();
@@ -55,7 +67,11 @@ export const SMOKE_SCRIPT = `(async () => {
   const doc = api.parseMarkdown(source);
   const view = api.state.view;
   view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content));
-  await new Promise((resolve) => setTimeout(resolve, 900));
+
+  // The maths engine and the syntax modes are fetched on demand.
+  await waitFor(() => !!document.querySelector('.md-math-inline .katex'));
+  await waitFor(() => !!document.querySelector('.md-code-block .cm-editor'));
+  await new Promise((resolve) => setTimeout(resolve, 400));
 
   const host = document.getElementById('editor-host');
   check('editor surface exists', !!host.querySelector('.ProseMirror'));
@@ -72,6 +88,15 @@ export const SMOKE_SCRIPT = `(async () => {
   const outline = api.state.outline;
   check('outline generated', outline.length >= 1 && outline[0].text === 'Heading One');
 
+  // ---- the hidden syntax follows the cursor ------------------------------
+  const TextSelectionClass = view.state.selection.constructor;
+  view.dispatch(view.state.tr.setSelection(TextSelectionClass.near(view.state.doc.resolve(2))));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+
+  const markers = host.querySelectorAll('.md-marker');
+  check('the hidden syntax follows the cursor', markers.length === 1, 'markers=' + markers.length);
+  check('the hidden syntax belongs to the active block', (markers[0]?.textContent || '').indexOf('#') === 0, markers[0]?.textContent);
+
   const md = api.currentMarkdown();
   check('markdown keeps heading', md.indexOf('# Heading One') >= 0);
   check('markdown keeps task', md.indexOf('- [x] finished') >= 0);
@@ -80,7 +105,7 @@ export const SMOKE_SCRIPT = `(async () => {
   check('markdown keeps code fence', md.indexOf('~~~js') >= 0 || md.indexOf('const a = 1;') >= 0);
   check('markdown keeps link', md.indexOf('[link](https://example.com)') >= 0);
 
-  const html = api.buildExportHtml();
+  const html = await api.buildExportHtml();
   check('export html produced', html.indexOf('Heading One') >= 0);
 
   // ---- the theme system and the preferences dialog ---------------------

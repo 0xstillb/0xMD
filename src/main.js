@@ -6,7 +6,7 @@
 import { createEditor } from './core/editor.js';
 import { parseMarkdown } from './core/parser.js';
 import { serializeMarkdown } from './core/serializer.js';
-import { markdownIt } from './core/markdown-it.js';
+import { markdownIt, prepareExport } from './core/markdown-it.js';
 import { TextSelection } from 'prosemirror-state';
 import { toggleMark, setBlockType, wrapIn } from 'prosemirror-commands';
 import { markerPlugin } from './core/plugins/markers.js';
@@ -59,6 +59,7 @@ const state = {
   recent: [],
   outline: [],
   outlineOffsets: new Map(),
+  outlineNodes: new Map(),
   mcpPort: null,
   loading: false,
   view: null,
@@ -202,6 +203,13 @@ async function setTheme(theme) {
  * Status bar
  * ------------------------------------------------------------------ */
 
+/**
+ * The status bar.
+ *
+ * Everything here is cheap, except the word count: counting the words of a
+ * document means reading all of it, so that is done on a timer instead of
+ * on every keystroke.
+ */
 function updateStatus() {
   el.statusPath.textContent = `${state.dirty ? '● ' : ''}${state.fileName}${state.filePath ? '' : ' — unsaved'}`;
 
@@ -223,6 +231,22 @@ function updateStatus() {
     return;
   }
 
+  el.statusOutline.textContent = state.outline.length ? `${state.outline.length} headings` : '';
+  scheduleWordCount();
+}
+
+let wordCountTimer = null;
+
+/** Count the words of the document — at most a few times a second. */
+function scheduleWordCount() {
+  if (wordCountTimer) return;
+  wordCountTimer = setTimeout(() => {
+    wordCountTimer = null;
+    updateWordCount();
+  }, 220);
+}
+
+function updateWordCount() {
   const doc = state.view?.state.doc;
   if (!doc) return;
 
@@ -231,7 +255,6 @@ function updateStatus() {
   const chars = text.length;
 
   el.statusWords.textContent = `${words} word${words === 1 ? '' : 's'} · ${chars} char${chars === 1 ? '' : 's'}`;
-  el.statusOutline.textContent = state.outline.length ? `${state.outline.length} headings` : '';
 }
 
 /* ------------------------------------------------------------------ *
@@ -274,13 +297,22 @@ function refreshOutline() {
   updateStatus();
 }
 
+/**
+ * The place of every heading on the page.
+ *
+ * The headings are looked up once and then measured — a scroll event must
+ * not ask the DOM for every heading again and again.
+ */
 function updateOutlineOffsets() {
   state.outlineOffsets.clear();
   if (!state.view) return;
   const dom = state.view.dom;
   state.outline.forEach((heading) => {
-    const node = dom.querySelector(`[data-pos="${heading.pos}"]`);
-    if (node) state.outlineOffsets.set(heading.pos, node.getBoundingClientRect().top + dom.parentElement.scrollTop);
+    const node = state.outlineNodes.get(heading.pos) ?? dom.querySelector(`[data-pos="${heading.pos}"]`);
+    if (node) {
+      state.outlineNodes.set(heading.pos, node);
+      state.outlineOffsets.set(heading.pos, node.getBoundingClientRect().top + dom.parentElement.scrollTop);
+    }
   });
 }
 
@@ -623,7 +655,14 @@ function renderTree() {
  * Export
  * ------------------------------------------------------------------ */
 
-function buildExportHtml() {
+/**
+ * The exported HTML.
+ *
+ * The highlighter and the maths engine are fetched first — they are not
+ * part of the start-up, but an export needs them.
+ */
+async function buildExportHtml() {
+  await prepareExport();
   const doc = state.view.state.doc;
   const html = markdownIt.render(currentMarkdown());
   const s = state.settings;
@@ -837,7 +876,7 @@ const mcpCommands = {
   },
   async export_document({ format, directory }) {
     const base = state.fileName.replace(/\.mdx?$/i, '') || 'document';
-    const html = buildExportHtml();
+    const html = await buildExportHtml();
     const target = directory
       ? `${directory.replace(/[\\/]+$/, '')}/${base}.${format}`
       : null;
@@ -865,10 +904,11 @@ const mcpCommands = {
   },
   configure_mcp({ enabled, port }) {
     // The server cannot restart itself in the middle of the request it is
-    // serving, so the answer goes out first and the restart follows.
+    // serving, so the answer goes out first and the restart follows. The
+    // wait is short: the server closes its port at once.
     setTimeout(() => {
       api.configureMcp({ enabled, port }).catch(() => {});
-    }, 400);
+    }, 120);
     return Promise.resolve({ restarting: true, enabled: enabled ?? null, port: port ?? null });
   },
   check_updates() {
@@ -967,24 +1007,30 @@ async function boot() {
   setupBeforeUnload();
   setupAboutDialog();
 
-  if (state.settings.lastFolder) {
-    try {
-      const tree = await api.folderTree(state.settings.lastFolder);
-      state.folderRoot = tree.root;
-      state.folderTree = tree.tree;
-      renderTree();
-    } catch {
-      /* folder is gone */
-    }
-  }
-
-  // A document or folder passed on the command line.
+  // A document or folder passed on the command line — the document comes
+  // first, so it is on screen before anything else is looked at.
   try {
     const startup = await api.startup();
     if (startup?.folder) await openFolder(startup.folder);
     if (startup?.file) await openDocument(startup.file);
   } catch {
     /* nothing to open */
+  }
+
+  // The folder of the last session. Scanning it can take a moment in a big
+  // folder, so it happens in the background — the document is already here.
+  if (!state.folderRoot && state.settings.lastFolder) {
+    const folder = state.settings.lastFolder;
+    api.folderTree(folder)
+      .then((tree) => {
+        if (state.folderRoot) return;
+        state.folderRoot = tree.root;
+        state.folderTree = tree.tree;
+        renderTree();
+      })
+      .catch(() => {
+        /* the folder is gone */
+      });
   }
 
   // Pick up the MCP server state (it may have been switched off).
@@ -1160,12 +1206,17 @@ function setupSidebar() {
     }, 260);
   });
 
-  // Scroll spy for the outline.
+  // Scroll spy for the outline. The work happens once per frame, not once
+  // per scroll event.
   const main = document.getElementById('main');
+  let scrollFrame = null;
   main.addEventListener('scroll', () => {
-    if (!state.outline.length) return;
-    updateOutlineOffsets();
-    highlightOutline(el.outlineTree, state.outline, main.scrollTop, state.outlineOffsets);
+    if (!state.outline.length || scrollFrame) return;
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = null;
+      updateOutlineOffsets();
+      highlightOutline(el.outlineTree, state.outline, main.scrollTop, state.outlineOffsets);
+    });
   });
 }
 
@@ -1267,12 +1318,12 @@ function setupMenuActions() {
         saveDocument({ forceAs: true });
         break;
       case 'file.exportHtml': {
-        const saved = await api.exportHtml(buildExportHtml(), `${state.fileName.replace(/\.mdx?$/i, '')}.html`);
+        const saved = await api.exportHtml(await buildExportHtml(), `${state.fileName.replace(/\.mdx?$/i, '')}.html`);
         if (saved) toast(`Exported to ${saved}`);
         break;
       }
       case 'file.exportPdf': {
-        const saved = await api.exportPdf(buildExportHtml(), `${state.fileName.replace(/\.mdx?$/i, '')}.pdf`);
+        const saved = await api.exportPdf(await buildExportHtml(), `${state.fileName.replace(/\.mdx?$/i, '')}.pdf`);
         if (saved) toast(`Exported to ${saved}`);
         break;
       }

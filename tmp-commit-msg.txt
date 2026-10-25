@@ -1,0 +1,28 @@
+Faster, lighter, steadier
+
+Three things were made lighter, faster and more reliable.
+
+**The start-up carries less.** The twelve CodeMirror language modes, KaTeX
+and highlight.js are fetched when something asks for them, not when the app
+starts; electron-updater is fetched when an update is looked for. A
+document without code and without maths now starts on ~780 kB of
+JavaScript instead of ~1.9 MB — and the app is ready in roughly half the
+time it used to take.
+
+**The typing does less.** The hidden syntax used to visit every block of
+the document on every keystroke and every cursor move; it now walks the
+ancestors of the cursor, which is all that is needed to find the block
+being edited. The word count in the status bar reads the whole document,
+so it runs on a timer. The scroll spy measures the headings once per frame
+instead of once per scroll event, and it keeps the elements it found.
+
+**The MCP server restarts at once.** Closing it waited for the open streams
+to end, which could take a second and a half — so moving the port felt
+broken. The port is freed immediately now, and the wait for the sockets is
+capped at a quarter of a second. The test that covers this, which had been
+failing, passes.
+
+The start-up also opens the document before it scans the folder tree: a big
+folder can take a moment, and there is no reason to wait for it before
+showing the text. The cache of open books is now limited by size rather
+than by count, and the unused @codemirror/legacy-modes dependency is gone.

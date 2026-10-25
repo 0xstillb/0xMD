@@ -6,42 +6,47 @@
 import { EditorView, keymap, highlightActiveLine, drawSelection, lineNumbers, highlightSpecialChars, rectangularSelection, crosshairCursor, dropCursor } from '@codemirror/view';
 import { EditorState, Compartment } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { StreamLanguage, syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput } from '@codemirror/language';
-import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
-import { markdown } from '@codemirror/lang-markdown';
-import { html } from '@codemirror/lang-html';
-import { css } from '@codemirror/lang-css';
-import { json } from '@codemirror/lang-json';
-import { sql } from '@codemirror/lang-sql';
-import { rust } from '@codemirror/lang-rust';
-import { java } from '@codemirror/lang-java';
-import { cpp } from '@codemirror/lang-cpp';
-import { php } from '@codemirror/lang-php';
-import { go } from '@codemirror/lang-go';
+import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput } from '@codemirror/language';
 
-const LANGUAGES = {
-  js: javascript, jsx: javascript, javascript: javascript, mjs: javascript, cjs: javascript,
-  ts: javascript, tsx: javascript, typescript: javascript,
-  py: python, python: python, python3: python,
-  md: markdown, markdown: markdown,
-  html: html, htm: html, vue: html, svg: html, xml: html,
-  css: css, scss: css, less: css,
-  json: json, json5: json,
-  sql: sql,
-  rs: rust, rust: rust,
-  java: java,
-  cpp: cpp, 'c++': cpp, c: cpp, h: cpp, hpp: cpp, cc: cpp,
-  php: php,
-  go: go, golang: go,
+// The language modes are loaded when a block asks for one. A document
+// without code should not pay for twelve parsers — and the editor starts
+// in a fraction of the time.
+const LANGUAGE_LOADERS = {
+  javascript: () => import('@codemirror/lang-javascript').then((m) => m.javascript()),
+  python: () => import('@codemirror/lang-python').then((m) => m.python()),
+  markdown: () => import('@codemirror/lang-markdown').then((m) => m.markdown()),
+  html: () => import('@codemirror/lang-html').then((m) => m.html()),
+  css: () => import('@codemirror/lang-css').then((m) => m.css()),
+  json: () => import('@codemirror/lang-json').then((m) => m.json()),
+  sql: () => import('@codemirror/lang-sql').then((m) => m.sql()),
+  rust: () => import('@codemirror/lang-rust').then((m) => m.rust()),
+  java: () => import('@codemirror/lang-java').then((m) => m.java()),
+  cpp: () => import('@codemirror/lang-cpp').then((m) => m.cpp()),
+  php: () => import('@codemirror/lang-php').then((m) => m.php()),
+  go: () => import('@codemirror/lang-go').then((m) => m.go()),
 };
 
-function languageFor(name) {
+const LANGUAGE_ALIASES = {
+  js: 'javascript', jsx: 'javascript', javascript: 'javascript', mjs: 'javascript', cjs: 'javascript',
+  ts: 'javascript', tsx: 'javascript', typescript: 'javascript',
+  py: 'python', python: 'python', python3: 'python',
+  md: 'markdown', markdown: 'markdown',
+  html: 'html', htm: 'html', vue: 'html', svg: 'html', xml: 'html',
+  css: 'css', scss: 'css', less: 'css',
+  json: 'json', json5: 'json',
+  sql: 'sql',
+  rs: 'rust', rust: 'rust',
+  java: 'java',
+  cpp: 'cpp', 'c++': 'cpp', c: 'cpp', h: 'cpp', hpp: 'cpp', cc: 'cpp',
+  php: 'php',
+  go: 'go', golang: 'go',
+};
+
+/** The language of a fence, or null when it is not one we know. */
+function languageKey(name) {
   if (!name) return null;
   const key = String(name).trim().toLowerCase();
-  const factory = LANGUAGES[key] || LANGUAGES[key.split(/[\s:-]/)[0]];
-  // CodeMirror wants the extension itself, not the factory.
-  return factory ? factory() : null;
+  return LANGUAGE_ALIASES[key] || LANGUAGE_ALIASES[key.split(/[\s:-]/)[0]] || null;
 }
 
 export function codeBlockView(node, view, getPos) {
@@ -84,7 +89,35 @@ export function codeBlockView(node, view, getPos) {
   dom.append(header, cmHost);
 
   const languageCompartment = new Compartment();
-  const params = node.attrs.params || '';
+  let params = node.attrs.params || '';
+  let languageToken = 0;
+  let destroyed = false;
+
+  /**
+   * Give the block its language. The mode is fetched in the background —
+   * the block is usable before it arrives.
+   */
+  async function setLanguage(name) {
+    const token = ++languageToken;
+    const key = languageKey(name);
+
+    if (!key) {
+      cm.dispatch({ effects: languageCompartment.reconfigure([]) });
+      return;
+    }
+
+    const loader = LANGUAGE_LOADERS[key];
+    if (!loader) return;
+
+    try {
+      const language = await loader();
+      // A newer language may have won the race while this one was loading.
+      if (token !== languageToken || destroyed) return;
+      cm.dispatch({ effects: languageCompartment.reconfigure(language) });
+    } catch {
+      /* the mode could not be loaded — the block stays uncoloured */
+    }
+  }
 
   const cm = new EditorView({
     state: EditorState.create({
@@ -115,11 +148,8 @@ export function codeBlockView(node, view, getPos) {
     parent: cmHost,
   });
 
-  const lang = languageFor(params);
-  if (lang) {
-    cm.dispatch({ effects: languageCompartment.reconfigure(lang) });
-  }
   langLabel.textContent = params || 'text';
+  setLanguage(params);
 
   // Push editor changes into ProseMirror.
   let syncing = false;
@@ -147,9 +177,9 @@ export function codeBlockView(node, view, getPos) {
       if (updatedNode.type !== node.type) return false;
       const nextParams = updatedNode.attrs.params || '';
       if (nextParams !== params) {
+        params = nextParams;
         langLabel.textContent = nextParams || 'text';
-        const nextLang = languageFor(nextParams);
-        cm.dispatch({ effects: languageCompartment.reconfigure(nextLang ? nextLang : []) });
+        setLanguage(nextParams);
       }
       const nextText = updatedNode.textContent;
       const currentText = cm.state.doc.toString();
@@ -169,6 +199,7 @@ export function codeBlockView(node, view, getPos) {
       return cm.dom.contains(event.target) && event.target !== cm.dom;
     },
     destroy() {
+      destroyed = true;
       cm.destroy();
     },
   };

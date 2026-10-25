@@ -608,13 +608,15 @@ export async function stopMcpServer() {
   if (!http) return;
 
   try {
-    // An MCP client may keep an SSE stream open, and close() would then wait
-    // for it forever — so the connections are dropped first.
+    // Stopping to listen frees the port right away; the open connections
+    // are dropped as well, because an MCP client may keep an SSE stream
+    // open and close() would then wait for it forever.
+    const closed = new Promise((resolve) => http.close(resolve));
     http.closeAllConnections?.();
-    await new Promise((resolve) => {
-      const timer = setTimeout(resolve, 1500);
-      http.close(() => { clearTimeout(timer); resolve(); });
-    });
+
+    // Wait for the sockets to go — but never for more than a moment. A
+    // restart has to feel immediate, and the port is free either way.
+    await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 250))]);
   } catch { /* already closed */ }
 }
 

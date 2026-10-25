@@ -4,8 +4,6 @@
 // (MIT/BSD/Apache). The app has no licence key and no telemetry.
 
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell, nativeTheme } from 'electron';
-// electron-updater is CommonJS, so it comes in through the default export.
-import electronUpdater from 'electron-updater';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -276,13 +274,14 @@ startupFolder = folderFromArgv(process.argv);
  * ------------------------------------------------------------------ */
 
 // The last few archives stay open, so a chapter can be read without
-// unzipping the book again.
+// unzipping the book again. The cache is limited by size, not by count —
+// a book can be big.
 const epubArchives = new Map();
-const EPUB_CACHE_SIZE = 3;
+const EPUB_CACHE_BYTES = 96 * 1024 * 1024;
 
 async function archiveFor(filePath) {
   const cached = epubArchives.get(filePath);
-  if (cached) return cached;
+  if (cached) return cached.archive;
 
   const stat = await fs.stat(filePath);
   if (stat.size > MAX_FILE_BYTES) {
@@ -290,10 +289,17 @@ async function archiveFor(filePath) {
   }
 
   const archive = new ZipArchive(await fs.readFile(filePath));
-  epubArchives.set(filePath, archive);
-  while (epubArchives.size > EPUB_CACHE_SIZE) {
-    epubArchives.delete(epubArchives.keys().next().value);
+  epubArchives.set(filePath, { archive, size: stat.size });
+
+  // The oldest books go first, and the cache never grows past its limit.
+  let total = 0;
+  for (const entry of epubArchives.values()) total += entry.size;
+  while (total > EPUB_CACHE_BYTES && epubArchives.size > 1) {
+    const oldest = epubArchives.keys().next().value;
+    total -= epubArchives.get(oldest).size;
+    epubArchives.delete(oldest);
   }
+
   return archive;
 }
 
@@ -597,7 +603,16 @@ ipcMain.on('mcp:result', (_event, { id, result }) => {
 
 let updateStatus = { checking: false, available: false, version: null, error: null };
 
-const { autoUpdater } = electronUpdater;
+// electron-updater is heavy, and most sessions never need it — so it is
+// fetched when an update is actually looked for.
+let updaterPromise = null;
+
+function getAutoUpdater() {
+  if (!updaterPromise) {
+    updaterPromise = import('electron-updater').then((module) => module.default?.autoUpdater ?? module.autoUpdater);
+  }
+  return updaterPromise;
+}
 
 async function checkForUpdates({ silent = false } = {}) {
   if (!app.isPackaged) {
@@ -614,6 +629,7 @@ async function checkForUpdates({ silent = false } = {}) {
   updateStatus = { checking: true, available: false, version: null, error: null };
 
   try {
+    const autoUpdater = await getAutoUpdater();
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.logger = null;

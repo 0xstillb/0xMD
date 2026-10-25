@@ -42,6 +42,24 @@ diagram **in place**. There is no preview pane — the document you are editing
 * **0xMD itself is MIT licensed** and will never require a licence key.
 * Nothing is phoned home. The MCP server binds to `127.0.0.1` only.
 
+## Keeping it light
+
+The editor should feel instant, so the heavy parts are only there when
+something asks for them:
+
+| Loaded at start | Loaded when needed |
+|---|---|
+| the editor, the parser, the theme | the twelve CodeMirror language modes |
+| | KaTeX, when a document has maths |
+| | highlight.js, when a document is exported |
+| | Mermaid and its diagram set, when a document has a diagram |
+| | electron-updater, when an update is looked for |
+
+That keeps the start-up at roughly **800 kB** of JavaScript instead of
+1.9 MB, and the typing smooth: the hidden syntax follows the cursor
+instead of walking the whole document, the word count runs on a timer, and
+the scroll spy measures the headings once per frame.
+
 ---
 
 ## Building a release
@@ -290,6 +308,7 @@ src/
     editor.js        ProseMirror view + plugin stack
     nodeviews/       KaTeX, Mermaid, CodeMirror, footnotes, raw HTML, task checkbox
     plugins/         hidden markers, keymap, input rules, live styles, placeholder
+    renderers.js     the heavy engines (KaTeX, highlight.js), fetched on demand
     opf/             XML reader + EPUB package reader (shared with the main process)
     epub/            the inside of a book: container, paths, XHTML → Markdown
   ui/                outline, file tree, find, quick open, settings, package viewer

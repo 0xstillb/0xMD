@@ -10,11 +10,10 @@
 //   > [!NOTE]    → alert           (alert_title / alert_text)
 
 import MarkdownIt from 'markdown-it';
-import hljs from 'highlight.js/lib/common';
-import katex from 'katex';
 import sub from 'markdown-it-sub';
 import sup from 'markdown-it-sup';
 import mark from 'markdown-it-mark';
+import { loadKatex, loadHighlighter } from './renderers.js';
 
 /* ------------------------------------------------------------------ *
  * Front matter — only valid at the very top of the document.
@@ -313,6 +312,10 @@ function taskListPlugin(md) {
  * Instance
  * ------------------------------------------------------------------ */
 
+// The export needs both of these; they are fetched when it happens.
+let hljs = null;
+let katex = null;
+
 export function createMarkdownIt() {
   const md = new MarkdownIt({
     html: true,          // raw HTML is allowed in documents
@@ -339,9 +342,10 @@ export function createMarkdownIt() {
       return `<pre class="md-mermaid-source"><code>${md.utils.escapeHtml(token.content)}</code></pre>`;
     }
 
-    // Syntax highlighting for the exported HTML.
+    // Syntax highlighting for the exported HTML. The highlighter is only
+    // there once it has been fetched — without it the code stays plain.
     const info = (token.info || '').trim().split(/\s+/)[0];
-    const language = info && hljs.getLanguage(info) ? info : '';
+    const language = info && hljs && hljs.getLanguage(info) ? info : '';
     if (language) {
       const highlighted = hljs.highlight(token.content, { language, ignoreIllegals: true }).value;
       return `<pre class="md-code-block"><code class="hljs language-${language}">${highlighted}</code></pre>`;
@@ -355,6 +359,7 @@ export function createMarkdownIt() {
     const target = document.createElement('span');
     target.className = 'md-math-inline';
     try {
+      if (!katex) throw new Error('no engine yet');
       katex.render(tokens[idx].content, target, { displayMode: false, throwOnError: false, output: 'html' });
     } catch {
       target.textContent = `$${tokens[idx].content}$`;
@@ -366,6 +371,7 @@ export function createMarkdownIt() {
     const target = document.createElement('div');
     target.className = 'md-math-block';
     try {
+      if (!katex) throw new Error('no engine yet');
       katex.render(tokens[idx].content, target, { displayMode: true, throwOnError: false, output: 'html' });
     } catch {
       target.textContent = `$$${tokens[idx].content}$$`;
@@ -374,6 +380,18 @@ export function createMarkdownIt() {
   };
 
   return md;
+}
+
+/**
+ * Fetch the renderers an export needs.
+ *
+ * The highlighter and the maths engine are not part of the start-up — an
+ * export asks for them first, and then they stay.
+ */
+export async function prepareExport() {
+  const [loadedKatex, loadedHighlighter] = await Promise.all([loadKatex(), loadHighlighter()]);
+  katex = loadedKatex;
+  hljs = loadedHighlighter;
 }
 
 export const markdownIt = createMarkdownIt();

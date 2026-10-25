@@ -98,7 +98,9 @@ painted text.
   when a document actually contains a diagram, then paints the resulting
   SVG with the active theme's colours.
 * **Real code editor.** `src/core/nodeviews/code-block.js` mounts
-  CodeMirror 6 inside a fenced block.
+  CodeMirror 6 inside a fenced block. The language modes are fetched when
+  a block asks for one, so a document without code does not pay for twelve
+  parsers.
 * **Raw HTML.** `src/core/nodeviews/html-block.js` renders it, but only
   after DOMPurify has stripped anything that could run.
 
@@ -231,3 +233,29 @@ The open document is also exposed as an MCP resource at
 
 (The scheme is `oxmd://` rather than `0xmd://` because a URL scheme may not
 start with a digit — the MCP SDK parses resource URIs with `new URL()`.)
+
+## 10. Staying light
+
+The editor is a small program that should feel instant. Three rules keep it
+that way.
+
+**Nothing is fetched before it is needed.** The heavy parts — the twelve
+CodeMirror language modes, KaTeX, highlight.js, Mermaid, electron-updater —
+are loaded when something actually asks for them (`src/core/renderers.js`
+holds the two that the editor and the export share). A document without
+code and without maths starts on ~800 kB of JavaScript instead of ~1.9 MB.
+
+**Nothing walks the whole document on every keystroke.** The hidden-syntax
+decorations used to visit every block of the document; now they walk the
+*ancestors* of the cursor, which is all that is needed to find the block
+being edited. The word count in the status bar reads the whole document, so
+it runs on a timer. The scroll spy measures the headings once per frame
+instead of once per scroll event.
+
+**The start-up does one thing at a time.** The document of the last session
+is opened before the folder tree is scanned — a big folder can take a
+moment, and there is no reason to wait for it before showing the text.
+
+The MCP server is the one place where a restart used to be slow: closing it
+waited for the open streams to end, which could take a second and a half.
+It now frees the port at once and moves on.

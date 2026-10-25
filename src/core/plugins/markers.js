@@ -12,17 +12,13 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
  * the cursor currently sits in.
  */
 export function markerDecorations(doc, selection, mode = 'active') {
-  const decorations = [];
   if (mode === 'none') return DecorationSet.empty;
 
-  doc.descendants((node, pos) => {
-    if (!node.isBlock) return true;
-    const markup = node.attrs?.markup;
-    if (!markup) return true;
+  const decorations = [];
 
-    const inside = selection.from >= pos && selection.from <= pos + node.nodeSize;
-    const show = mode === 'all' || inside;
-    if (!show) return true;
+  const reveal = (node, pos) => {
+    const markup = node.attrs?.markup;
+    if (!markup) return;
 
     // While a bullet item is being edited the native bullet is replaced by
     // the raw markdown marker.
@@ -43,8 +39,29 @@ export function markerDecorations(doc, selection, mode = 'active') {
         { side: -1, key: `md-marker-${pos}` },
       ),
     );
-    return true;
-  });
+  };
+
+  if (mode === 'active') {
+    // Only the block around the cursor shows its syntax — and that block is
+    // an ancestor of the cursor. Walking the ancestors costs nothing, while
+    // walking the whole document on every keystroke costs a lot.
+    const $pos = doc.resolve(selection.from);
+    for (let depth = $pos.depth; depth > 0; depth--) {
+      reveal($pos.node(depth), $pos.before(depth));
+    }
+    // A cursor in the gap between two blocks belongs to neither of them —
+    // but the syntax of both neighbours used to show there, so it still does.
+    if ($pos.depth === 0) {
+      if ($pos.nodeBefore) reveal($pos.nodeBefore, $pos.pos - $pos.nodeBefore.nodeSize);
+      if ($pos.nodeAfter) reveal($pos.nodeAfter, $pos.pos);
+    }
+  } else {
+    doc.descendants((node, pos) => {
+      if (!node.isBlock) return true;
+      reveal(node, pos);
+      return true;
+    });
+  }
 
   return DecorationSet.create(doc, decorations);
 }
